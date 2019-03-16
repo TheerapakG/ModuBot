@@ -20,10 +20,13 @@ class RichGuild:
     def guild(self):
         return self._bot.get_guild(self._id)
 
-    @property
-    def connected_voice_channel(self):
+    async def _connected_voice_channel(self):
         async with self._aiolocks['c_voice_channel']:
             return self._voice_channel
+
+    @property
+    def connected_voice_channel(self):
+        return self._bot.loop.run_until_complete(self._connected_voice_channel())
 
     async def _move_channel(self, new_channel):
         async with self._aiolocks['c_voice_channel']:
@@ -54,10 +57,13 @@ class RichGuild:
             else:
                 return # @TheerapakG: TODO: raise exc
 
-    @property
-    def connected_voice_client(self):
+    async def _connected_voice_client(self):
         async with self._aiolocks['c_voice_channel']:
             return self._voice_client
+
+    @property
+    def connected_voice_client(self):
+        return self._bot.loop.run_until_complete(self._connected_voice_client())
 
 def register_bot(bot):
     guilds[bot.user.id] = {guild.id:RichGuild(bot, guild.id) for guild in bot.guilds}
@@ -65,12 +71,14 @@ def register_bot(bot):
     async def on_guild_join(guild):
         if bot.is_ready():
             guilds[bot.user.id][guild.id] = RichGuild(bot, guild.id)
+            bot.log.info('joined guild {}'.format(guild.name))
 
     bot.event(on_guild_join)
 
     async def on_guild_remove(guild):
         if bot.is_ready():
             del guilds[bot.user.id][guild.id]
+            bot.log.info('removed guild {}'.format(guild.name))
 
     bot.event(on_guild_remove)
 
@@ -85,5 +93,6 @@ def register_bot(bot):
                     if not after.channel:
                         guilds[bot.user.id][guild.id]._voice_client = None
                     guilds[bot.user.id][guild.id]._voice_channel = after.channel
+            bot.log.info('member {}#{} changed voice state in guild {}'.format(member.name, member.discriminator, guild.name))
 
     bot.event(on_voice_state_update)
