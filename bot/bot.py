@@ -16,8 +16,8 @@ from collections import namedtuple
 MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '0'
-MODUBOT_VERSIONTYPE = 'a'
-MODUBOT_SUBVERSION = '7'
+MODUBOT_VERSIONTYPE = 'b'
+MODUBOT_SUBVERSION = '1'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -54,7 +54,8 @@ class ModuBot(Bot):
         #     2: add to loaded
         for moduleinfo in modulelist:
             if 'pre_init' in dir(moduleinfo.module):
-                potential = moduleinfo.module['pre_init']
+                self.log.debug('executing pre_init in {}'.format(moduleinfo.name))
+                potential = getattr(moduleinfo.module, 'pre_init')
                 if iscoroutinefunction(potential):
                     await potential(moduleinfo.module_spfc_config)
                 elif isfunction(potential):
@@ -64,24 +65,27 @@ class ModuBot(Bot):
 
         for moduleinfo in modulelist:
             if 'commands' in dir(moduleinfo.module):
-                commands = moduleinfo.module['commands']
+                self.log.debug('loading commands in {}'.format(moduleinfo.name))
+                commands = getattr(moduleinfo.module, 'commands')
                 if isiterable(commands):
                     for command in commands:
-                        self.add_command(command)
+                        self.add_command(command())
                 else:
                     self.log.debug('commands is not an iterable')
 
             if 'cogs' in dir(moduleinfo.module):
-                cogs = moduleinfo.module['cogs']
+                self.log.debug('loading cogs in {}'.format(moduleinfo.name))
+                cogs = getattr(moduleinfo.module, 'cogs')
                 if isiterable(cogs):
                     for cog in cogs:
-                        self.add_cog(cog)
+                        self.add_cog(cog())
                 else:
                     self.log.debug('cogs is not an iterable')
 
 
             if 'init' in dir(moduleinfo.module):
-                potential = moduleinfo.module['init']
+                self.log.debug('executing init in {}'.format(moduleinfo.name))
+                potential = getattr(moduleinfo.module, 'init')
                 if iscoroutinefunction(potential):
                     await potential(moduleinfo.module_spfc_config)
                 elif isfunction(potential):
@@ -91,7 +95,8 @@ class ModuBot(Bot):
 
         for moduleinfo in modulelist:
             if 'post_init' in dir(moduleinfo.module):
-                potential = moduleinfo.module['post_init']
+                self.log.debug('executing post_init in {}'.format(moduleinfo.name))
+                potential = getattr(moduleinfo.module, 'post_init')
                 if iscoroutinefunction(potential):
                     await potential(moduleinfo.module_spfc_config)
                 elif isfunction(potential):
@@ -153,16 +158,10 @@ class ModuBot(Bot):
 
     def logout(self):
         self.loop.run_until_complete(super().logout())
-        self.unload_all_module()
+        self.loop.run_until_complete(self.unload_all_module())
         self.loop.stop()
         gathered = asyncio.gather(*asyncio.Task.all_tasks(), loop=self.loop)
-        try:
-            gathered.cancel()
-            self.loop.run_until_complete(gathered)
-            gathered.exception()
-        except Exception as e:
-            self.log.error(e)
-        finally:
-            self.log.debug('Closing Loop')
-            self.loop.close()
+        gathered.cancel()
+        self.log.debug('Closing Loop')
+        self.loop.close()
     

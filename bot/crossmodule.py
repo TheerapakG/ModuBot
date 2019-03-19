@@ -56,7 +56,7 @@ class CrossModule:
         del self.imported[module_name]
 
     def modules_loaded(self):
-        return self._features.keys().copy()
+        return list(self._features.keys())
 
     def _register_feature(self, module_name, feature, val):
         self._features[module_name][feature] = val
