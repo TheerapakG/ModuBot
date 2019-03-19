@@ -8,6 +8,7 @@ class CrossModule:
         self._preds = dict()
         self._objs = dict()
         self._features = dict()
+        self.imported = dict()
 
     def register_decorator(self, decorator):
         self._decorators[decorator.__name__] = decorator
@@ -46,11 +47,13 @@ class CrossModule:
     def get_object(self, name):
         return self._objs[name]
 
-    def _add_module(self, module_name):
+    def _add_module(self, module_name, module):
         self._features[module_name] = dict()
+        self.imported[module_name] = module
 
     def _remove_module(self, module_name):
         del self._features[module_name]
+        del self.imported[module_name]
 
     def modules_loaded(self):
         return self._features.keys().copy()
