@@ -8,6 +8,7 @@ from inspect import iscoroutinefunction, isfunction
 import pkgutil
 
 from . import config
+from .utils import isiterable
 from .rich_guild import guilds, register_bot
 from .crossmodule import CrossModule
 from collections import namedtuple
@@ -16,7 +17,7 @@ MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '0'
 MODUBOT_VERSIONTYPE = 'a'
-MODUBOT_SUBVERSION = '6'
+MODUBOT_SUBVERSION = '7'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -41,15 +42,15 @@ class ModuBot(Bot):
         #         port to communicate with server, opening file for logging, register stuff to
         #         crossmodule object (except features), etc. pre_init must throw if not successful
         # 2: walk module again
-        #     1: load command, group, cogs, ...
-        #         even if some command, group, cogs in a module is not loaded, it will not get skip 
+        #     1: load command, cogs, ...
+        #         even if some command, cogs in a module is not loaded, it will not get skip 
         #     2: module init
         #         this stage should be use to check commands in the module that got loaded and
         #         register features available after loaded. init must throw if not successful
         # 3: walk module again
         #     1: module post_init
         #         this stage should be use to check if dependency loaded correctly with features
-        #         needed. post_init must throw if not successful
+        #         needed and register dependencies needed. post_init must throw if not successful
         #     2: add to loaded
         for moduleinfo in modulelist:
             if 'pre_init' in dir(moduleinfo.module):
@@ -59,10 +60,26 @@ class ModuBot(Bot):
                 elif isfunction(potential):
                     potential(moduleinfo.module_spfc_config)
                 else:
-                    self.log.debug('')
+                    self.log.debug('pre_init is neither funtion nor coroutine function')
 
         for moduleinfo in modulelist:
-            # TODO: load command, group, cogs, ...
+            if 'commands' in dir(moduleinfo.module):
+                commands = moduleinfo.module['commands']
+                if isiterable(commands):
+                    for command in commands:
+                        self.add_command(command)
+                else:
+                    self.log.debug('commands is not an iterable')
+
+            if 'cogs' in dir(moduleinfo.module):
+                cogs = moduleinfo.module['cogs']
+                if isiterable(cogs):
+                    for cog in cogs:
+                        self.add_cog(cog)
+                else:
+                    self.log.debug('cogs is not an iterable')
+
+
             if 'init' in dir(moduleinfo.module):
                 potential = moduleinfo.module['init']
                 if iscoroutinefunction(potential):
@@ -70,7 +87,7 @@ class ModuBot(Bot):
                 elif isfunction(potential):
                     potential(moduleinfo.module_spfc_config)
                 else:
-                    self.log.debug('')
+                    self.log.debug('init is neither funtion nor coroutine function')
 
         for moduleinfo in modulelist:
             if 'post_init' in dir(moduleinfo.module):
@@ -80,7 +97,7 @@ class ModuBot(Bot):
                 elif isfunction(potential):
                     potential(moduleinfo.module_spfc_config)
                 else:
-                    self.log.debug('')
+                    self.log.debug('post_init is neither funtion nor coroutine function')
             self.crossmodule._add_module(moduleinfo.name, moduleinfo.module)
 
     def _prepare_load_module(self, modulename):
@@ -106,7 +123,7 @@ class ModuBot(Bot):
 
     async def _unload_module(self, module):
         # 1: unload dependents
-        # 2: unload command, group, cogs, ...
+        # 2: unload command, cogs, ...
         # 3: remove features
         # 4: remove from loaded
         # 5: module uninit
