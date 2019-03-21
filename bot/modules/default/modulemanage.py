@@ -18,4 +18,18 @@ class ModuleManage(Cog):
         await ctx.bot.load_modules(literal_eval(moduleconfigs))
         await msg.edit(content = 'loaded successfully!')
 
+    @command()
+    async def unload_modules(self, ctx, *modules):
+        """
+        Usage:
+            {prefix}unload_modules modules
+
+        unload modules specified
+        """
+        msg = await ctx.send('unloading specified modules...')
+        # TODO: unload only once per module
+        for module in modules:
+            await ctx.bot.unload_module(module)
+        await msg.edit(content = 'unloaded successfully!')
+
 cogs = [ModuleManage]
