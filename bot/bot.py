@@ -6,6 +6,7 @@ from importlib import import_module, reload
 from collections import namedtuple
 from inspect import iscoroutinefunction, isfunction
 import pkgutil
+import sys
 
 from . import config
 from .utils import isiterable
@@ -17,7 +18,7 @@ MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '0'
 MODUBOT_VERSIONTYPE = 'a'
-MODUBOT_SUBVERSION = '9'
+MODUBOT_SUBVERSION = '10'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -72,7 +73,7 @@ class ModuBot(Bot):
                     for command in commands:
                         cmd = command()
                         self.add_command(cmd)
-                        self.crossmodule._commands[moduleinfo.name].append(cmd)
+                        self.crossmodule._commands[moduleinfo.name].append(cmd.name)
                 else:
                     self.log.debug('commands is not an iterable')
 
@@ -83,7 +84,7 @@ class ModuBot(Bot):
                     for cog in cogs:
                         cg = cog()
                         self.add_cog(cg)
-                        self.crossmodule._cogs[moduleinfo.name].append(cg)
+                        self.crossmodule._cogs[moduleinfo.name].append(cg.name)
                 else:
                     self.log.debug('cogs is not an iterable')
 
@@ -117,10 +118,11 @@ class ModuBot(Bot):
                 else:
                     self.log.debug('post_init is neither funtion nor coroutine function')
             self.crossmodule._add_module(moduleinfo.name, moduleinfo.module)
+            self.log.debug('loaded {}'.format(moduleinfo.name))
 
     async def _prepare_load_module(self, modulename):
         if modulename in self.crossmodule.modules_loaded():
-            await self.unload_module(modulename)
+            await self.unload_module(modulename, unimport = False)
             reload(self.crossmodule.imported[modulename])
             module = self.crossmodule.imported[modulename]
         else:
@@ -139,10 +141,9 @@ class ModuBot(Bot):
         modulelist = self._gen_modulelist(modulesname_config)
         await self._load_modules(modulelist)
 
-    async def unload_module(self, modulename):
+    async def unload_module(self, modulename, *, unimport = True):
         # 1: unload dependents
         # 2: unload command, cogs, ...
-        # 3: remove features
         # 4: remove from loaded
         # 5: module uninit
         def gendependentlist():
@@ -161,8 +162,35 @@ class ModuBot(Bot):
         unloadlist = gendependentlist().reverse()
 
         for module in unloadlist:
-            pass
-        
+            for cog in self.crossmodule._cogs[module]:
+                self.remove_cog(cog)
+            for command in self.crossmodule._cogs[module]:
+                self.remove_command(command)
+
+            moduleobj = self.crossmodule.imported[module]
+            if 'uninit' in dir(moduleobj):
+                self.log.debug('executing uninit in {}'.format(module))
+                potential = getattr(moduleobj, 'uninit')
+                if iscoroutinefunction(potential):
+                    await potential()
+                elif isfunction(potential):
+                    potential()
+                else:
+                    self.log.debug('uninit is neither funtion nor coroutine function')
+            
+            self.crossmodule._remove_module(module)
+            self.log.debug('unloaded {}'.format(module))
+
+            if unimport:
+                def _is_submodule(parent, child):
+                    return parent == child or child.startswith(parent + ".")
+
+                del moduleobj
+                for p_submodule in list(sys.modules.keys()):
+                    if _is_submodule(module, p_submodule):
+                        del sys.modules[p_submodule]
+
+                self.log.debug('unimported {}'.format(module))
 
     async def unload_all_module(self):
         pass
