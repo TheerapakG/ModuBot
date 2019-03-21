@@ -4,10 +4,13 @@ from discord.ext.commands import Context
 
 class CrossModule:
     def __init__(self):
+        self._module_graph = dict()
         self._decorators = dict()
         self._preds = dict()
         self._objs = dict()
         self._features = dict()
+        self._cogs = dict()
+        self._commands = dict()
         self.imported = dict()
 
     def register_decorator(self, decorator):
@@ -50,10 +53,20 @@ class CrossModule:
     def _add_module(self, module_name, module):
         self._features[module_name] = dict()
         self.imported[module_name] = module
+        self._module_graph[module_name] = list()
+        self._cogs[module_name] = list()
+        self._commands[module_name] = list()
 
     def _remove_module(self, module_name):
         del self._features[module_name]
         del self.imported[module_name]
+        del self._module_graph[module_name]
+        del self._cogs[module_name]
+        del self._commands[module_name]
+
+    def _register_dependency(self, modulename, deps_module_list = []):
+        for dep in deps_module_list:
+            self._module_graph[dep].append(modulename)
 
     def modules_loaded(self):
         return list(self._features.keys())

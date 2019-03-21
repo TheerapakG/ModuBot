@@ -11,13 +11,13 @@ from . import config
 from .utils import isiterable
 from .rich_guild import guilds, register_bot
 from .crossmodule import CrossModule
-from collections import namedtuple
+from collections import namedtuple, deque
 
 MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '0'
-MODUBOT_VERSIONTYPE = 'b'
-MODUBOT_SUBVERSION = '1'
+MODUBOT_VERSIONTYPE = 'a'
+MODUBOT_SUBVERSION = '9'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -52,6 +52,7 @@ class ModuBot(Bot):
         #         this stage should be use to check if dependency loaded correctly with features
         #         needed and register dependencies needed. post_init must throw if not successful
         #     2: add to loaded
+
         for moduleinfo in modulelist:
             if 'pre_init' in dir(moduleinfo.module):
                 self.log.debug('executing pre_init in {}'.format(moduleinfo.name))
@@ -69,7 +70,9 @@ class ModuBot(Bot):
                 commands = getattr(moduleinfo.module, 'commands')
                 if isiterable(commands):
                     for command in commands:
-                        self.add_command(command())
+                        cmd = command()
+                        self.add_command(cmd)
+                        self.crossmodule._commands[moduleinfo.name].append(cmd)
                 else:
                     self.log.debug('commands is not an iterable')
 
@@ -78,9 +81,19 @@ class ModuBot(Bot):
                 cogs = getattr(moduleinfo.module, 'cogs')
                 if isiterable(cogs):
                     for cog in cogs:
-                        self.add_cog(cog())
+                        cg = cog()
+                        self.add_cog(cg)
+                        self.crossmodule._cogs[moduleinfo.name].append(cg)
                 else:
                     self.log.debug('cogs is not an iterable')
+
+            if 'deps' in dir(moduleinfo.module):
+                self.log.debug('adding deps in {}'.format(moduleinfo.name))
+                deps = getattr(moduleinfo.module, 'deps')
+                if isiterable(deps):
+                    self.crossmodule._register_dependency(moduleinfo.name, deps)
+                else:
+                    self.log.debug('deps is not an iterable')
 
 
             if 'init' in dir(moduleinfo.module):
@@ -105,9 +118,9 @@ class ModuBot(Bot):
                     self.log.debug('post_init is neither funtion nor coroutine function')
             self.crossmodule._add_module(moduleinfo.name, moduleinfo.module)
 
-    def _prepare_load_module(self, modulename):
+    async def _prepare_load_module(self, modulename):
         if modulename in self.crossmodule.modules_loaded():
-            self._unload_module(modulename)
+            await self.unload_module(modulename)
             reload(self.crossmodule.imported[modulename])
             module = self.crossmodule.imported[modulename]
         else:
@@ -115,10 +128,10 @@ class ModuBot(Bot):
 
         return module
 
-    def _gen_modulelist(self, modulesname_config):
+    async def _gen_modulelist(self, modulesname_config):
         modules = list()
         for modulename, moduleconfig in modulesname_config:
-            modules.append(self.ModuleTuple(modulename, self._prepare_load_module(modulename), moduleconfig))
+            modules.append(self.ModuleTuple(modulename, await self._prepare_load_module(modulename), moduleconfig))
 
         return modules
 
@@ -126,21 +139,32 @@ class ModuBot(Bot):
         modulelist = self._gen_modulelist(modulesname_config)
         await self._load_modules(modulelist)
 
-    async def _unload_module(self, module):
+    async def unload_module(self, modulename):
         # 1: unload dependents
         # 2: unload command, cogs, ...
         # 3: remove features
         # 4: remove from loaded
         # 5: module uninit
-        pass
+        def gendependentlist():
+            deplist = list()
+            considerdeque = deque([modulename])
+            considerset = set()
+            while considerdeque:
+                node = considerdeque.pop()
+                deplist.append(node)
+                for module in self.crossmodule._module_graph[modulename]:
+                    if module not in considerset:
+                        considerdeque.append(module)
+                        considerset.add(module)
+            return deplist
 
-    async def unload_module(self, modulename):
-        pass
+        unloadlist = gendependentlist().reverse()
+
+        for module in unloadlist:
+            pass
+        
 
     async def unload_all_module(self):
-        pass
-
-    def register_dependency(self, module, deps_module_list = []):
         pass
 
     async def on_ready(self):
