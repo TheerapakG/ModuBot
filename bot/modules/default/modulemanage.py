@@ -27,9 +27,7 @@ class ModuleManage(Cog):
         unload modules specified
         """
         msg = await ctx.send('unloading specified modules...')
-        # TODO: unload only once per module
-        for module in modules:
-            await ctx.bot.unload_module(module)
+        await ctx.bot.unload_modules(modules)
         await msg.edit(content = 'unloaded successfully!')
 
 cogs = [ModuleManage]

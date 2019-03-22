@@ -16,9 +16,9 @@ from collections import namedtuple, deque
 
 MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
-MODUBOT_REVISION = '0'
-MODUBOT_VERSIONTYPE = 'a'
-MODUBOT_SUBVERSION = '11'
+MODUBOT_REVISION = '1'
+MODUBOT_VERSIONTYPE = 'r'
+MODUBOT_SUBVERSION = ''
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -66,6 +66,8 @@ class ModuBot(Bot):
                     self.log.debug('pre_init is neither funtion nor coroutine function')
 
         for moduleinfo in modulelist:
+            self.crossmodule._add_module(moduleinfo.name, moduleinfo.module)
+
             if 'commands' in dir(moduleinfo.module):
                 self.log.debug('loading commands in {}'.format(moduleinfo.name))
                 commands = getattr(moduleinfo.module, 'commands')
@@ -74,6 +76,7 @@ class ModuBot(Bot):
                         cmd = command()
                         self.add_command(cmd)
                         self.crossmodule._commands[moduleinfo.name].append(cmd.name)
+                        self.log.debug('loaded {}'.format(cmd.name))
                 else:
                     self.log.debug('commands is not an iterable')
 
@@ -84,7 +87,8 @@ class ModuBot(Bot):
                     for cog in cogs:
                         cg = cog()
                         self.add_cog(cg)
-                        self.crossmodule._cogs[moduleinfo.name].append(cg.name)
+                        self.crossmodule._cogs[moduleinfo.name].append(cg.qualified_name)
+                        self.log.debug('loaded {}'.format(cg.qualified_name))
                 else:
                     self.log.debug('cogs is not an iterable')
 
@@ -117,12 +121,11 @@ class ModuBot(Bot):
                     potential(moduleinfo.module_spfc_config)
                 else:
                     self.log.debug('post_init is neither funtion nor coroutine function')
-            self.crossmodule._add_module(moduleinfo.name, moduleinfo.module)
             self.log.debug('loaded {}'.format(moduleinfo.name))
 
     async def _prepare_load_module(self, modulename):
         if modulename in self.crossmodule.modules_loaded():
-            await self.unload_module(modulename, unimport = False)
+            await self.unload_modules([modulename], unimport = False)
             reload(self.crossmodule.imported[modulename])
             module = self.crossmodule.imported[modulename]
         else:
@@ -138,28 +141,29 @@ class ModuBot(Bot):
         return modules
 
     async def load_modules(self, modulesname_config):
-        modulelist = self._gen_modulelist(modulesname_config)
+        modulelist = await self._gen_modulelist(modulesname_config)
         await self._load_modules(modulelist)
 
-    async def unload_module(self, modulename, *, unimport = True):
+    async def unload_modules(self, modulenames, *, unimport = True):
         # 1: unload dependents
         # 2: unload command, cogs, ...
         # 4: remove from loaded
         # 5: module uninit
         def gendependentlist():
             deplist = list()
-            considerdeque = deque([modulename])
+            considerdeque = deque(modulenames)
             considerset = set()
             while considerdeque:
                 node = considerdeque.pop()
                 deplist.append(node)
-                for module in self.crossmodule._module_graph[modulename]:
+                for module in self.crossmodule._module_graph[node]:
                     if module not in considerset:
                         considerdeque.append(module)
                         considerset.add(module)
             return deplist
 
-        unloadlist = gendependentlist().reverse()
+        unloadlist = gendependentlist()
+        unloadlist.reverse()
 
         for module in unloadlist:
             for cog in self.crossmodule._cogs[module]:
@@ -193,7 +197,7 @@ class ModuBot(Bot):
                 self.log.debug('unimported {}'.format(module))
 
     async def unload_all_module(self):
-        pass
+        await self.unload_modules(self.crossmodule.modules_loaded())
 
     async def on_ready(self):
         self.log.info("Connected")
