@@ -13,7 +13,7 @@ class Permission(Cog):
 
         add permission group in current guild
         """
-        perm_info[ctx.bot][groupname] = defaultdict(lambda: None)
+        perm_info[ctx.bot][groupname] = dict()
 
     @command()
     async def remove_permgroup(self, ctx, groupname: str):
