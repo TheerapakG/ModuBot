@@ -17,8 +17,8 @@ from collections import namedtuple, deque
 MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '1'
-MODUBOT_VERSIONTYPE = 'r'
-MODUBOT_SUBVERSION = ''
+MODUBOT_VERSIONTYPE = 'a'
+MODUBOT_SUBVERSION = '1'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -37,6 +37,7 @@ class ModuBot(Bot):
         self.help_command = None
 
     async def _load_modules(self, modulelist):
+        # TODO: change into cog pre_init, cog init and cog post_init/ deps listing inside cogs
         # 1: walk module
         #     1: module pre_init
         #         this stage should be use to read up config and prepare things such as opening
@@ -59,9 +60,9 @@ class ModuBot(Bot):
                 self.log.debug('executing pre_init in {}'.format(moduleinfo.name))
                 potential = getattr(moduleinfo.module, 'pre_init')
                 if iscoroutinefunction(potential):
-                    await potential(moduleinfo.module_spfc_config)
+                    await potential(self, moduleinfo.module_spfc_config)
                 elif isfunction(potential):
-                    potential(moduleinfo.module_spfc_config)
+                    potential(self, moduleinfo.module_spfc_config)
                 else:
                     self.log.debug('pre_init is neither funtion nor coroutine function')
 
@@ -105,9 +106,9 @@ class ModuBot(Bot):
                 self.log.debug('executing init in {}'.format(moduleinfo.name))
                 potential = getattr(moduleinfo.module, 'init')
                 if iscoroutinefunction(potential):
-                    await potential(moduleinfo.module_spfc_config)
+                    await potential(self, moduleinfo.module_spfc_config)
                 elif isfunction(potential):
-                    potential(moduleinfo.module_spfc_config)
+                    potential(self, moduleinfo.module_spfc_config)
                 else:
                     self.log.debug('init is neither funtion nor coroutine function')
 
@@ -116,16 +117,16 @@ class ModuBot(Bot):
                 self.log.debug('executing post_init in {}'.format(moduleinfo.name))
                 potential = getattr(moduleinfo.module, 'post_init')
                 if iscoroutinefunction(potential):
-                    await potential(moduleinfo.module_spfc_config)
+                    await potential(self, moduleinfo.module_spfc_config)
                 elif isfunction(potential):
-                    potential(moduleinfo.module_spfc_config)
+                    potential(self, moduleinfo.module_spfc_config)
                 else:
                     self.log.debug('post_init is neither funtion nor coroutine function')
             self.log.debug('loaded {}'.format(moduleinfo.name))
 
     async def _prepare_load_module(self, modulename):
         if modulename in self.crossmodule.modules_loaded():
-            await self.unload_modules([modulename], unimport = False)
+            await self.unload_modules([modulename])
             reload(self.crossmodule.imported[modulename])
             module = self.crossmodule.imported[modulename]
         else:
@@ -144,7 +145,7 @@ class ModuBot(Bot):
         modulelist = await self._gen_modulelist(modulesname_config)
         await self._load_modules(modulelist)
 
-    async def unload_modules(self, modulenames, *, unimport = True):
+    async def unload_modules(self, modulenames, *, unimport = False):
         # 1: unload dependents
         # 2: unload command, cogs, ...
         # 4: remove from loaded
@@ -176,9 +177,9 @@ class ModuBot(Bot):
                 self.log.debug('executing uninit in {}'.format(module))
                 potential = getattr(moduleobj, 'uninit')
                 if iscoroutinefunction(potential):
-                    await potential()
+                    await potential(self)
                 elif isfunction(potential):
-                    potential()
+                    potential(self)
                 else:
                     self.log.debug('uninit is neither funtion nor coroutine function')
             
