@@ -1,9 +1,13 @@
-from discord.ext.commands import Cog, command
+from discord.ext.commands import Cog, command, CommandError
 from collections import defaultdict
-
-perm_info = dict()
+from functools import wraps
 
 class Permission(Cog):
+
+    def __init__(self, *args, **kwargs):
+        self.bot = None
+        self.perm_info = dict()
+        super().__init__(self, *args, **kwargs)
 
     @command()
     async def add_permgroup(self, ctx, groupname: str):
@@ -13,7 +17,7 @@ class Permission(Cog):
 
         add permission group in current guild
         """
-        perm_info[ctx.bot][groupname] = dict()
+        self.perm_info[groupname] = dict()
 
     @command()
     async def remove_permgroup(self, ctx, groupname: str):
@@ -23,7 +27,7 @@ class Permission(Cog):
 
         remove permission group from current guild
         """
-        del perm_info[ctx.bot][groupname]
+        del self.perm_info[groupname]
 
     @command()
     async def set_permgroup(self, ctx, groupname: str, permname: str, *, value: str):
@@ -33,7 +37,7 @@ class Permission(Cog):
 
         set permission of a group in current guild
         """
-        perm_info[ctx.bot][groupname][permname] = value
+        self.perm_info[groupname][permname] = value
 
     @command()
     async def literal_displayperm(self, ctx):
@@ -43,12 +47,27 @@ class Permission(Cog):
 
         display permissions in the server for the bot as dictionary (unformatted form)
         """
-        await ctx.send(str(perm_info[ctx.bot]))
+        await ctx.send(str(self.perm_info))
 
-def init(bot, permconfig):
-    perm_info[bot] = permconfig
+    # THEEABRVSPF DUMMY
+    @staticmethod
+    def require_perm_cog(self, name, value):
+        def decorate_use_name(func):
+            @wraps(func)
+            def wrapper(self, ctx, *args, **kwargs):
+                return func(self, ctx, *args, **kwargs)
+            return wrapper
+        return decorate_use_name
 
-def uninit(bot):
-    del perm_info[bot]
+    def pre_init(self, bot, permconfig):
+        self.bot = bot
+        self.perm_info = permconfig
+        bot.crossmodule.register_decorator(self.require_perm_cog)
+
+    def uninit(self, bot):
+        del self.perm_info[bot]
+
+class PermError(CommandError):
+    pass
 
 cogs = [Permission]

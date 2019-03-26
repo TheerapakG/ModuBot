@@ -18,7 +18,7 @@ MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '1'
 MODUBOT_VERSIONTYPE = 'a'
-MODUBOT_SUBVERSION = '2'
+MODUBOT_SUBVERSION = '3'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -48,23 +48,34 @@ class ModuBot(Bot):
         #         even if some command, cogs in a module is not loaded, it will not get skip 
         #     2: module init
         #         this stage should be use to check commands in the module that got loaded and
-        #         register features available after loaded. init must throw if not successful
+        #         register features available after loaded. also uses to retrieve stuff from
+        #         crossmodule. init must throw if not successful
         # 3: walk module again
         #     1: module post_init
         #         this stage should be use to check if dependency loaded correctly with features
         #         needed and register dependencies needed. post_init must throw if not successful
         #     2: add to loaded
 
+        load_cogs = []
+
         for moduleinfo in modulelist:
-            if 'pre_init' in dir(moduleinfo.module):
-                self.log.debug('executing pre_init in {}'.format(moduleinfo.name))
-                potential = getattr(moduleinfo.module, 'pre_init')
-                if iscoroutinefunction(potential):
-                    await potential(self, moduleinfo.module_spfc_config)
-                elif isfunction(potential):
-                    potential(self, moduleinfo.module_spfc_config)
+            if 'cogs' in dir(moduleinfo.module):
+                cogs = getattr(moduleinfo.module, 'cogs')
+                if isiterable(cogs):
+                    for cog in cogs:
+                        cg = cog()
+                        if 'pre_init' in dir(cg):
+                            self.log.debug('executing pre_init in {}'.format(cg.qualified_name))
+                            potential = getattr(cg, 'pre_init')
+                            if iscoroutinefunction(potential):
+                                await potential(self, moduleinfo.module_spfc_config)
+                            elif isfunction(potential):
+                                potential(self, moduleinfo.module_spfc_config)
+                            else:
+                                self.log.debug('pre_init is neither funtion nor coroutine function')
+                            load_cogs.append((moduleinfo.name, cg))
                 else:
-                    self.log.debug('pre_init is neither funtion nor coroutine function')
+                    self.log.debug('cogs is not an iterable')
 
         for moduleinfo in modulelist:
             self.crossmodule._add_module(moduleinfo.name, moduleinfo.module)
@@ -81,17 +92,11 @@ class ModuBot(Bot):
                 else:
                     self.log.debug('commands is not an iterable')
 
-            if 'cogs' in dir(moduleinfo.module):
-                self.log.debug('loading cogs in {}'.format(moduleinfo.name))
-                cogs = getattr(moduleinfo.module, 'cogs')
-                if isiterable(cogs):
-                    for cog in cogs:
-                        cg = cog()
-                        self.add_cog(cg)
-                        self.crossmodule._cogs[moduleinfo.name].append(cg.qualified_name)
-                        self.log.debug('loaded {}'.format(cg.qualified_name))
-                else:
-                    self.log.debug('cogs is not an iterable')
+            self.log.debug('loading cogs')
+            for modulename, cog in load_cogs:
+                self.add_cog(cog)
+                self.crossmodule._cogs[modulename].append(cog.qualified_name)
+                self.log.debug('loaded {}'.format(cog.qualified_name))
 
             if 'deps' in dir(moduleinfo.module):
                 self.log.debug('adding deps in {}'.format(moduleinfo.name))
@@ -101,28 +106,27 @@ class ModuBot(Bot):
                 else:
                     self.log.debug('deps is not an iterable')
 
+            for modulename, cog in load_cogs:
+                if 'init' in dir(cog):
+                    self.log.debug('executing init in {}'.format(cog.qualified_name))
+                    potential = getattr(cog, 'init')
+                    if iscoroutinefunction(potential):
+                        await potential()
+                    elif isfunction(potential):
+                        potential()
+                    else:
+                        self.log.debug('init is neither funtion nor coroutine function')
 
-            if 'init' in dir(moduleinfo.module):
-                self.log.debug('executing init in {}'.format(moduleinfo.name))
-                potential = getattr(moduleinfo.module, 'init')
+        for modulename, cog in load_cogs:
+            if 'post_init' in dir(cog):
+                self.log.debug('executing post_init in {}'.format(cog.qualified_name))
+                potential = getattr(cog, 'post_init')
                 if iscoroutinefunction(potential):
-                    await potential(self, moduleinfo.module_spfc_config)
+                    await potential()
                 elif isfunction(potential):
-                    potential(self, moduleinfo.module_spfc_config)
-                else:
-                    self.log.debug('init is neither funtion nor coroutine function')
-
-        for moduleinfo in modulelist:
-            if 'post_init' in dir(moduleinfo.module):
-                self.log.debug('executing post_init in {}'.format(moduleinfo.name))
-                potential = getattr(moduleinfo.module, 'post_init')
-                if iscoroutinefunction(potential):
-                    await potential(self, moduleinfo.module_spfc_config)
-                elif isfunction(potential):
-                    potential(self, moduleinfo.module_spfc_config)
+                    potential()
                 else:
                     self.log.debug('post_init is neither funtion nor coroutine function')
-            self.log.debug('loaded {}'.format(moduleinfo.name))
 
     async def _prepare_load_module(self, modulename):
         if modulename in self.crossmodule.modules_loaded():
