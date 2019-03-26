@@ -1,13 +1,16 @@
 from discord.ext.commands import Cog, command, CommandError
+from discord import Member, Role
 from collections import defaultdict
 from functools import wraps
 
 class Permission(Cog):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self):
         self.bot = None
+        self.perms = list()
         self.perm_info = dict()
-        super().__init__(self, *args, **kwargs)
+        self.perm_user = dict()
+        self.perm_role = dict()
 
     @command()
     async def add_permgroup(self, ctx, groupname: str):
@@ -17,7 +20,11 @@ class Permission(Cog):
 
         add permission group in current guild
         """
-        self.perm_info[groupname] = dict()
+        if groupname not in self.perms:
+            self.perms.append(groupname)
+            self.perm_info[groupname] = dict()
+            self.perm_user[groupname] = set()
+            self.perm_role[groupname] = set()
 
     @command()
     async def remove_permgroup(self, ctx, groupname: str):
@@ -27,7 +34,10 @@ class Permission(Cog):
 
         remove permission group from current guild
         """
+        self.perms.remove(groupname)
         del self.perm_info[groupname]
+        del self.perm_user[groupname]
+        del self.perm_role[groupname]
 
     @command()
     async def set_permgroup(self, ctx, groupname: str, permname: str, *, value: str):
@@ -40,12 +50,52 @@ class Permission(Cog):
         self.perm_info[groupname][permname] = value
 
     @command()
-    async def literal_displayperm(self, ctx):
+    async def add_user(self, ctx, groupname: str, member: Member):
         """
         Usage:
-            {prefix}literal_displayperm
+            {prefix}add_user groupname member
 
-        display permissions in the server for the bot as dictionary (unformatted form)
+        add user to permission group
+        """
+        self.perm_user[groupname].add(member.id)
+
+    @command()
+    async def remove_user(self, ctx, groupname: str, member: Member):
+        """
+        Usage:
+            {prefix}remove_user groupname member
+
+        remove user from permission group
+        """
+        self.perm_user[groupname].remove(member.id)
+
+    @command()
+    async def add_role(self, ctx, groupname: str, role: Role):
+        """
+        Usage:
+            {prefix}add_role groupname member
+
+        add role to permission group
+        """
+        self.perm_role[groupname].add(role.id)
+
+    @command()
+    async def remove_role(self, ctx, groupname: str, role: Role):
+        """
+        Usage:
+            {prefix}remove_role groupname member
+
+        remove role from permission group
+        """
+        self.perm_role[groupname].remove(role.id)
+
+    @command()
+    async def literal_displayperminfo(self, ctx):
+        """
+        Usage:
+            {prefix}literal_displayperminfo
+
+        display permission info in the server for the bot as dictionary (unformatted form)
         """
         await ctx.send(str(self.perm_info))
 
@@ -63,9 +113,6 @@ class Permission(Cog):
         self.bot = bot
         self.perm_info = permconfig
         bot.crossmodule.register_decorator(self.require_perm_cog)
-
-    def uninit(self, bot):
-        del self.perm_info[bot]
 
 class PermError(CommandError):
     pass

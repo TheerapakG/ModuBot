@@ -18,7 +18,7 @@ MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '1'
 MODUBOT_VERSIONTYPE = 'a'
-MODUBOT_SUBVERSION = '3'
+MODUBOT_SUBVERSION = '4'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -67,13 +67,15 @@ class ModuBot(Bot):
                         if 'pre_init' in dir(cg):
                             self.log.debug('executing pre_init in {}'.format(cg.qualified_name))
                             potential = getattr(cg, 'pre_init')
-                            if iscoroutinefunction(potential):
+                            self.log.debug(str(potential))
+                            self.log.debug(str(potential.__func__))
+                            if iscoroutinefunction(potential.__func__):
                                 await potential(self, moduleinfo.module_spfc_config)
-                            elif isfunction(potential):
+                            elif isfunction(potential.__func__):
                                 potential(self, moduleinfo.module_spfc_config)
                             else:
                                 self.log.debug('pre_init is neither funtion nor coroutine function')
-                            load_cogs.append((moduleinfo.name, cg))
+                        load_cogs.append((moduleinfo.name, cg))
                 else:
                     self.log.debug('cogs is not an iterable')
 
@@ -110,9 +112,11 @@ class ModuBot(Bot):
                 if 'init' in dir(cog):
                     self.log.debug('executing init in {}'.format(cog.qualified_name))
                     potential = getattr(cog, 'init')
-                    if iscoroutinefunction(potential):
+                    self.log.debug(str(potential))
+                    self.log.debug(str(potential.__func__))
+                    if iscoroutinefunction(potential.__func__):
                         await potential()
-                    elif isfunction(potential):
+                    elif isfunction(potential.__func__):
                         potential()
                     else:
                         self.log.debug('init is neither funtion nor coroutine function')
@@ -121,9 +125,11 @@ class ModuBot(Bot):
             if 'post_init' in dir(cog):
                 self.log.debug('executing post_init in {}'.format(cog.qualified_name))
                 potential = getattr(cog, 'post_init')
-                if iscoroutinefunction(potential):
+                self.log.debug(str(potential))
+                self.log.debug(str(potential.__func__))
+                if iscoroutinefunction(potential.__func__):
                     await potential()
-                elif isfunction(potential):
+                elif isfunction(potential.__func__):
                     potential()
                 else:
                     self.log.debug('post_init is neither funtion nor coroutine function')
@@ -172,20 +178,20 @@ class ModuBot(Bot):
 
         for module in unloadlist:
             for cog in self.crossmodule._cogs[module]:
+                if 'uninit' in dir(cog):
+                    self.log.debug('executing uninit in {}'.format(cog.qualified_name))
+                    potential = getattr(cog, 'uninit')
+                    self.log.debug(str(potential))
+                    self.log.debug(str(potential.__func__))
+                    if iscoroutinefunction(potential.__func__):
+                        await potential(self)
+                    elif isfunction(potential.__func__):
+                        potential(self)
+                    else:
+                        self.log.debug('uninit is neither funtion nor coroutine function')
                 self.remove_cog(cog)
             for command in self.crossmodule._cogs[module]:
                 self.remove_command(command)
-
-            moduleobj = self.crossmodule.imported[module]
-            if 'uninit' in dir(moduleobj):
-                self.log.debug('executing uninit in {}'.format(module))
-                potential = getattr(moduleobj, 'uninit')
-                if iscoroutinefunction(potential):
-                    await potential(self)
-                elif isfunction(potential):
-                    potential(self)
-                else:
-                    self.log.debug('uninit is neither funtion nor coroutine function')
             
             self.crossmodule._remove_module(module)
             self.log.debug('unloaded {}'.format(module))
@@ -194,7 +200,6 @@ class ModuBot(Bot):
                 def _is_submodule(parent, child):
                     return parent == child or child.startswith(parent + ".")
 
-                del moduleobj
                 for p_submodule in list(sys.modules.keys()):
                     if _is_submodule(module, p_submodule):
                         del sys.modules[p_submodule]
