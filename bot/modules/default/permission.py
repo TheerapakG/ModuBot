@@ -9,8 +9,22 @@ class Permission(Cog):
         self.bot = None
         self.perms = list()
         self.perm_info = dict()
-        self.perm_user = dict()
+        self.perm_member = dict()
         self.perm_role = dict()
+
+    def have_perm(self, member, perm, value, comparer = lambda permvalue, requirevalue: permvalue == requirevalue):
+        roles = member.roles
+
+        for group in self.perms:
+            if comparer(self.perm_info[group][perm], value):
+                if member.id in self.perm_member[group]:
+                    return True
+                for role in roles:
+                    if role.id in self.perm_role[group]:
+                        return True
+
+        return False
+
 
     @command()
     async def add_permgroup(self, ctx, groupname: str):
@@ -23,7 +37,7 @@ class Permission(Cog):
         if groupname not in self.perms:
             self.perms.append(groupname)
             self.perm_info[groupname] = dict()
-            self.perm_user[groupname] = set()
+            self.perm_member[groupname] = set()
             self.perm_role[groupname] = set()
 
     @command()
@@ -36,7 +50,7 @@ class Permission(Cog):
         """
         self.perms.remove(groupname)
         del self.perm_info[groupname]
-        del self.perm_user[groupname]
+        del self.perm_member[groupname]
         del self.perm_role[groupname]
 
     @command()
@@ -50,24 +64,24 @@ class Permission(Cog):
         self.perm_info[groupname][permname] = value
 
     @command()
-    async def add_user(self, ctx, groupname: str, member: Member):
+    async def add_member(self, ctx, groupname: str, member: Member):
         """
         Usage:
-            {prefix}add_user groupname member
+            {prefix}add_member groupname member
 
-        add user to permission group
+        add member to permission group
         """
-        self.perm_user[groupname].add(member.id)
+        self.perm_member[groupname].add(member.id)
 
     @command()
-    async def remove_user(self, ctx, groupname: str, member: Member):
+    async def remove_member(self, ctx, groupname: str, member: Member):
         """
         Usage:
-            {prefix}remove_user groupname member
+            {prefix}remove_member groupname member
 
-        remove user from permission group
+        remove member from permission group
         """
-        self.perm_user[groupname].remove(member.id)
+        self.perm_member[groupname].remove(member.id)
 
     @command()
     async def add_role(self, ctx, groupname: str, role: Role):
@@ -99,13 +113,15 @@ class Permission(Cog):
         """
         await ctx.send(str(self.perm_info))
 
-    # THEEABRVSPF DUMMY
     @staticmethod
-    def require_perm_cog(self, name, value):
+    def require_perm_cog(self, perm, value, comparer):
         def decorate_use_name(func):
             @wraps(func)
-            def wrapper(self, ctx, *args, **kwargs):
-                return func(self, ctx, *args, **kwargs)
+            def wrapper(funcself, ctx, *args, **kwargs):
+                if self.have_perm(ctx.user, perm, value, comparer):
+                    return func(funcself, ctx, *args, **kwargs)
+                else:
+                    raise PermError('User do not have the required permission')
             return wrapper
         return decorate_use_name
 
