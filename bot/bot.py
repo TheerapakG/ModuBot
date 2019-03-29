@@ -18,7 +18,7 @@ MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '1'
 MODUBOT_VERSIONTYPE = 'a'
-MODUBOT_SUBVERSION = '5'
+MODUBOT_SUBVERSION = '6'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -94,12 +94,13 @@ class ModuBot(Bot):
                 else:
                     self.log.debug('commands is not an iterable')
 
-            self.log.debug('loading cogs')
-            for modulename, cog in load_cogs:
-                self.add_cog(cog)
-                self.crossmodule._cogs[modulename].append(cog.qualified_name)
-                self.log.debug('loaded {}'.format(cog.qualified_name))
+        self.log.debug('loading cogs')
+        for modulename, cog in load_cogs:
+            self.add_cog(cog)
+            self.crossmodule._cogs[modulename].append(cog.qualified_name)
+            self.log.debug('loaded {}'.format(cog.qualified_name))
 
+        for moduleinfo in modulelist:
             if 'deps' in dir(moduleinfo.module):
                 self.log.debug('adding deps in {}'.format(moduleinfo.name))
                 deps = getattr(moduleinfo.module, 'deps')
