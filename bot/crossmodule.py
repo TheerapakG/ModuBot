@@ -78,5 +78,7 @@ class CrossModule:
         del self._features[module_name][feature]
 
     def feature(self, module_name, feature):
-        # All behaving adults should not modify value returned by this method
+        '''
+        All behaving adults should not modify value returned by this method
+        '''
         return self._features[module_name][feature]
