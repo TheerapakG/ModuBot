@@ -20,11 +20,11 @@ class CrossModule:
         del self._decorators[decorator.__name__]
 
     def decorate(self, name, *args, **kwargs):
-        async def decorate_use_name(func):
+        def decorate_use_name(func):
             @wraps(func)
             async def wrapper(*fargs, **fkwargs):
                 return await (self._decorators[name](*args, **kwargs)(func))(*fargs, **fkwargs)
-            return await wrapper
+            return wrapper
         return decorate_use_name
 
     def raw_decorator(self, decorator):

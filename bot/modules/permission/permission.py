@@ -31,6 +31,11 @@ class Permission(Cog):
         self.perm_member = dict()
         self.perm_role = dict()
 
+    def pre_init(self, bot, permconfig):
+        self.bot = bot
+        self.perm_info = permconfig
+        bot.crossmodule.register_decorator(update_wrapper(partial(Decorators.require_perm_cog, coginst = self), Decorators.require_perm_cog))
+
     @command()
     @Decorators.require_perm_cog('canModifyPermission', 'True')
     async def add_permgroup(self, ctx, groupname: str):
@@ -138,11 +143,6 @@ class Permission(Cog):
                         return True
 
         return False
-
-    def pre_init(self, bot, permconfig):
-        self.bot = bot
-        self.perm_info = permconfig
-        bot.crossmodule.register_decorator(update_wrapper(partial(Decorators.require_perm_cog, coginst = self), Decorators.require_perm_cog))
 
 class PermError(CommandError):
     pass
