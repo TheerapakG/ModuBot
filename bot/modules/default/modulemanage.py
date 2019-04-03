@@ -5,7 +5,7 @@ from ...decorator_helper import decorate_cog_command
 class ModuleManage(Cog):
 
     @command()
-    @decorate_cog_command('require_perm_cog', 'canManageModule', 'True')
+    @decorate_cog_command('require_perm_cog_command', 'canManageModule', 'True')
     async def load_modules(self, ctx, *, moduleconfigs: str):
         """
         Usage:
@@ -22,7 +22,7 @@ class ModuleManage(Cog):
         await msg.edit(content = 'loaded successfully!')
 
     @command()
-    @decorate_cog_command('require_perm_cog', 'canManageModule', 'True')
+    @decorate_cog_command('require_perm_cog_command', 'canManageModule', 'True')
     async def unload_modules(self, ctx, *modules):
         """
         Usage:
