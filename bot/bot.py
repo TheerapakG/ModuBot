@@ -5,6 +5,7 @@ import colorlog
 from importlib import import_module, reload
 from collections import namedtuple
 from inspect import iscoroutinefunction, isfunction
+from functools import partial
 import pkgutil
 import sys
 
@@ -13,12 +14,13 @@ from .utils import isiterable
 from .rich_guild import guilds, register_bot
 from .crossmodule import CrossModule
 from collections import namedtuple, deque
+from threading import Thread
 
 MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '1'
 MODUBOT_VERSIONTYPE = 'a'
-MODUBOT_SUBVERSION = '11'
+MODUBOT_SUBVERSION = '12'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -221,14 +223,36 @@ class ModuBot(Bot):
 
     def run(self):
         self.loop.run_until_complete(self.start(self.config.token))
-        self.loop.run_forever()
+
+    async def _logout(self):
+        await super().logout()
+        await self.unload_all_module()
+        self.log.debug('finished cleaning up')
+
+    def logout_loopstopped(self):
+        self.log.debug('logging out (loopstopped)..')
+        self.loop.run_until_complete(self._logout())
+        self.log.debug('canceling incomplete tasks...')
+        gathered = asyncio.gather(*asyncio.Task.all_tasks(self.loop), loop=self.loop)
+        gathered.cancel()
+        self.log.debug('closing loop...')
+        self.loop.close()
+
+    def logout_looprunning(self):
+        # WIP
+        self.log.debug('logging out (looprunning)..')
+        self.log.debug('stopping loop...')
+        self.loop.stop()
+        self.loop.run_until_complete(self._logout())
+        self.log.debug('canceling incomplete tasks...')
+        gathered = asyncio.gather(*asyncio.Task.all_tasks(self.loop), loop=self.loop)
+        gathered.cancel()
+        self.log.debug('closing loop...')
+        self.loop.close()
 
     def logout(self):
-        self.loop.run_until_complete(super().logout())
-        self.loop.run_until_complete(self.unload_all_module())
-        self.loop.stop()
-        gathered = asyncio.gather(*asyncio.Task.all_tasks(), loop=self.loop)
-        gathered.cancel()
-        self.log.debug('Closing Loop')
-        self.loop.close()
-    
+        self.log.debug('logging out...')
+        if self.loop.is_running():
+            self.logout_looprunning()
+        else:
+            self.logout_loopstopped()

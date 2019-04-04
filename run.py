@@ -37,30 +37,48 @@ if __name__ == "__main__":
     log.addHandler(sh)
     logger.addHandler(sh)
 
+    logfile = open('logs/log.txt','w', encoding='utf-8')
+
+    fh = logging.StreamHandler(stream=logfile)
+    fh.setFormatter(logging.Formatter(
+        fmt="[%(relativeCreated).9f] %(asctime)s - %(levelname)s - %(name)s: %(message)s"
+    ))
+    log.addHandler(fh)
+    logger.addHandler(fh)
+
     loop = asyncio.get_event_loop()
 
     config = Config(ConfigDefaults.config_file)
-    bot = ModuBot(loop=loop, conf=config, loghandlerlist=[sh], max_messages=10000)
-    loop.run_until_complete(bot.load_modules([('default',{}), ('permission',{})]))
+    bot = ModuBot(loop=loop, conf=config, loghandlerlist=[sh, fh], max_messages=10000)
+    loop.run_until_complete(bot.load_modules([('default',{}), ('permission',{}), ('announce',{})]))
 
     def logouthandler(sig, stackframe=None):
+        log.info('\nShutting down ... (logouthandler/{})'.format(system()))
         log.info(sig)
         bot.logout()
 
+    abortKeyboardInterrupt = False
+
+    
     if system() == 'Windows':
         try:
             from win32.win32api import SetConsoleCtrlHandler
             SetConsoleCtrlHandler(logouthandler, True)
+            abortKeyboardInterrupt = True
         except ImportError:
             version = '.'.join(map(str, sys.version_info))
-            log.warn('pywin32 not installed for Python {}. Please stop the bot using KeyboardInterrupt instead of the close button.'.format(version))
+            log.warning('pywin32 not installed for Python {}. Please stop the bot using KeyboardInterrupt instead of the close button.'.format(version))
     
     else:
         import signal
         signal.signal(signal.SIGTERM, logouthandler)
-
+    
     try:
         bot.run()
-    except (KeyboardInterrupt, RuntimeError):
-        log.info('\nShutting down ... (KeyboardInterrupt)')
+    except KeyboardInterrupt:
+        if not abortKeyboardInterrupt:
+            log.info('\nShutting down ... (KeyboardInterrupt)')
+            bot.logout()
+    except RuntimeError:
+        log.info('\nShutting down ... (RuntimeError)')
         bot.logout()
