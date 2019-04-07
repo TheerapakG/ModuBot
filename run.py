@@ -52,13 +52,17 @@ if __name__ == "__main__":
     bot = ModuBot(loop=loop, conf=config, loghandlerlist=[sh, fh], max_messages=10000)
     loop.run_until_complete(bot.load_modules([('default',{}), ('permission',{}), ('announce',{})]))
 
+    shutdown = False
+
     def logouthandler(sig, stackframe=None):
-        log.info('\nShutting down ... (logouthandler/{})'.format(system()))
-        log.info(sig)
-        bot.logout()
+        global shutdown
+        if not shutdown:            
+            shutdown = True
+            log.info('\nShutting down ... (logouthandler/{})'.format(system()))
+            log.info(sig)
+            bot.logout()
 
     abortKeyboardInterrupt = False
-
     
     if system() == 'Windows':
         try:
@@ -70,15 +74,23 @@ if __name__ == "__main__":
             log.warning('pywin32 not installed for Python {}. Please stop the bot using KeyboardInterrupt instead of the close button.'.format(version))
     
     else:
-        import signal
-        signal.signal(signal.SIGTERM, logouthandler)
+        import atexit
+        atexit.register(logouthandler, 0)
     
     try:
         bot.run()
+        if not shutdown:
+            shutdown = True
+            log.info('\nShutting down ... (RunExit)')
+            bot.logout()
     except KeyboardInterrupt:
         if not abortKeyboardInterrupt:
-            log.info('\nShutting down ... (KeyboardInterrupt)')
-            bot.logout()
+            if not shutdown:
+                shutdown = True
+                log.info('\nShutting down ... (KeyboardInterrupt)')
+                bot.logout()
     except RuntimeError:
-        log.info('\nShutting down ... (RuntimeError)')
-        bot.logout()
+        if not shutdown:
+            shutdown = True
+            log.info('\nShutting down ... (RuntimeError)')
+            bot.logout()

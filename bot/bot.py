@@ -1,4 +1,5 @@
 from discord.ext.commands import Bot
+from discord.gateway import DiscordWebSocket, ResumeWebSocket
 import asyncio
 import logging
 import colorlog
@@ -14,13 +15,13 @@ from .utils import isiterable
 from .rich_guild import guilds, register_bot
 from .crossmodule import CrossModule
 from collections import namedtuple, deque
-from threading import Thread
+import threading
 
 MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '1'
 MODUBOT_VERSIONTYPE = 'a'
-MODUBOT_SUBVERSION = '12'
+MODUBOT_SUBVERSION = '13'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -29,6 +30,7 @@ class ModuBot(Bot):
     ModuleTuple = namedtuple('ModuleTuple', ['name', 'module', 'module_spfc_config'])
 
     def __init__(self, *args, logname = "ModuBot", conf = config.ConfigDefaults, loghandlerlist = [], **kwargs):
+        self.thread = None
         self.config = conf
         self.crossmodule = CrossModule()
         self.log = logging.getLogger(logname)
@@ -222,7 +224,10 @@ class ModuBot(Bot):
         register_bot(self)
 
     def run(self):
-        self.loop.run_until_complete(self.start(self.config.token))
+        self.thread = threading.currentThread()
+        self.log.debug('running bot on thread {}'.format(threading.get_ident()))
+        self.loop.create_task(self.start(self.config.token))
+        self.loop.run_forever()
 
     async def _logout(self):
         await super().logout()
@@ -230,6 +235,7 @@ class ModuBot(Bot):
         self.log.debug('finished cleaning up')
 
     def logout_loopstopped(self):
+        self.log.debug('on thread {}'.format(threading.get_ident()))
         self.log.debug('logging out (loopstopped)..')
         self.loop.run_until_complete(self._logout())
         self.log.debug('canceling incomplete tasks...')
@@ -239,11 +245,17 @@ class ModuBot(Bot):
         self.loop.close()
 
     def logout_looprunning(self):
-        # WIP
+        async def _stop():
+            self.loop.stop()
+
+        self.log.debug('on thread {}'.format(threading.get_ident()))
+        self.log.debug('bot\'s thread status: {}'.format(self.thread.is_alive()))
         self.log.debug('logging out (looprunning)..')
+        future = asyncio.run_coroutine_threadsafe(self._logout(), self.loop)
+        future.result()
         self.log.debug('stopping loop...')
-        self.loop.stop()
-        self.loop.run_until_complete(self._logout())
+        future = asyncio.run_coroutine_threadsafe(_stop(), self.loop)
+        future.result()
         self.log.debug('canceling incomplete tasks...')
         gathered = asyncio.gather(*asyncio.Task.all_tasks(self.loop), loop=self.loop)
         gathered.cancel()
