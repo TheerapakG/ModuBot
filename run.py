@@ -4,6 +4,7 @@ import sys
 from bot import logger
 from bot.bot import ModuBot
 from bot.config import Config, ConfigDefaults
+import threading
 from platform import system
 
 if __name__ == "__main__":
@@ -53,14 +54,17 @@ if __name__ == "__main__":
     loop.run_until_complete(bot.load_modules([('default',{}), ('permission',{}), ('announce',{})]))
 
     shutdown = False
+    safe_shutdown = threading.Lock()
 
     def logouthandler(sig, stackframe=None):
+        safe_shutdown.acquire()
         global shutdown
         if not shutdown:            
             shutdown = True
             log.info('\nShutting down ... (logouthandler/{})'.format(system()))
             log.info(sig)
             bot.logout()
+        safe_shutdown.release()
 
     abortKeyboardInterrupt = False
     
@@ -94,3 +98,7 @@ if __name__ == "__main__":
             shutdown = True
             log.info('\nShutting down ... (RuntimeError)')
             bot.logout()
+    try:
+        safe_shutdown.acquire()
+    except KeyboardInterrupt:
+        pass

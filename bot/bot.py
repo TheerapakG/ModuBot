@@ -1,5 +1,4 @@
 from discord.ext.commands import Bot
-from discord.gateway import DiscordWebSocket, ResumeWebSocket
 import asyncio
 import logging
 import colorlog
@@ -21,7 +20,7 @@ MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '1'
 MODUBOT_VERSIONTYPE = 'a'
-MODUBOT_SUBVERSION = '13'
+MODUBOT_SUBVERSION = '14'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -243,6 +242,7 @@ class ModuBot(Bot):
         gathered.cancel()
         self.log.debug('closing loop...')
         self.loop.close()
+        self.log.debug('finished!')
 
     def logout_looprunning(self):
         async def _stop():
@@ -255,12 +255,15 @@ class ModuBot(Bot):
         future.result()
         self.log.debug('stopping loop...')
         future = asyncio.run_coroutine_threadsafe(_stop(), self.loop)
-        future.result()
+        # TODO: thread safe by acquiring lock to the loop
+        while self.loop.is_running():
+            pass
         self.log.debug('canceling incomplete tasks...')
         gathered = asyncio.gather(*asyncio.Task.all_tasks(self.loop), loop=self.loop)
         gathered.cancel()
         self.log.debug('closing loop...')
         self.loop.close()
+        self.log.debug('finished!')
 
     def logout(self):
         self.log.debug('logging out...')
