@@ -20,7 +20,7 @@ MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '1'
 MODUBOT_VERSIONTYPE = 'a'
-MODUBOT_SUBVERSION = '14'
+MODUBOT_SUBVERSION = '15'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -38,6 +38,7 @@ class ModuBot(Bot):
         self.log.setLevel(self.config.debug_level)
         super().__init__(command_prefix = self.config.command_prefix, *args, **kwargs)
         self.help_command = None
+        self.looplock = threading.Lock()
 
     async def _load_modules(self, modulelist):
         # TODO: change into cog pre_init, cog init and cog post_init/ deps listing inside cogs
@@ -225,6 +226,7 @@ class ModuBot(Bot):
     def run(self):
         self.thread = threading.currentThread()
         self.log.debug('running bot on thread {}'.format(threading.get_ident()))
+        self.looplock.acquire()
         self.loop.create_task(self.start(self.config.token))
         self.loop.run_forever()
 
@@ -247,6 +249,7 @@ class ModuBot(Bot):
     def logout_looprunning(self):
         async def _stop():
             self.loop.stop()
+            self.looplock.release()
 
         self.log.debug('on thread {}'.format(threading.get_ident()))
         self.log.debug('bot\'s thread status: {}'.format(self.thread.is_alive()))
@@ -255,9 +258,7 @@ class ModuBot(Bot):
         future.result()
         self.log.debug('stopping loop...')
         future = asyncio.run_coroutine_threadsafe(_stop(), self.loop)
-        # TODO: thread safe by acquiring lock to the loop
-        while self.loop.is_running():
-            pass
+        self.looplock.acquire()
         self.log.debug('canceling incomplete tasks...')
         gathered = asyncio.gather(*asyncio.Task.all_tasks(self.loop), loop=self.loop)
         gathered.cancel()
