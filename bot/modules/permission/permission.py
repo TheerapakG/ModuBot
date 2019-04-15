@@ -17,7 +17,7 @@ class Permission(Cog):
             async def wrapper(funcself, ctx, *args, **kwargs):
                 if not self.coginst:
                     self.coginst = funcself
-                if self.coginst.have_perm(ctx.author, self.perm, self.value, self.comparer):
+                if await self.coginst.have_perm(ctx.author, self.perm, self.value, self.comparer):
                     return await func(funcself, ctx, *args, **kwargs)
                 else:
                     raise PermError('User do not have the required permission')
@@ -29,11 +29,16 @@ class Permission(Cog):
         self.perm_info = dict()
         self.perm_member = dict()
         self.perm_role = dict()
+        self.perm_permissive = dict()
 
-    def pre_init(self, bot, permconfig):
+    async def pre_init(self, bot, permconfig):
         self.bot = bot
         self.perm_info = permconfig
         bot.crossmodule.register_decorator(update_wrapper(partial(self.require_perm_cog_command, coginst = self), self.require_perm_cog_command))
+        bot.crossmodule.register_object('PermissivePerm', dict())
+
+    async def after_init(self):
+        self.perm_permissive = self.bot.crossmodule.get_object('PermissivePerm')
 
     async def on_ready(self):
         self.bot.log.debug('owner id: {}'.format(await self.bot.get_owner_id()))
@@ -133,8 +138,13 @@ class Permission(Cog):
         """
         await ctx.send(str(self.perm_info))
 
-    def have_perm(self, member, perm, value, comparer):
+    async def have_perm(self, member, perm, value, comparer):
         roles = member.roles
+
+        # TODO: make it so owner can override this
+        if member.id == await self.bot.get_owner_id():
+            if comparer(self.perm_permissive[perm], value):
+                return True
 
         for group in self.perms:
             if comparer(self.perm_info[group][perm], value):

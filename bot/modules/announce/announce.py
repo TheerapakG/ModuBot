@@ -17,6 +17,15 @@ class Announce(Cog):
 
     def __init__(self):
         self.tasks = list()
+        self.bot = None
+        self.config = None
+
+    async def pre_init(self, bot, config):
+        self.bot = bot
+        self.config = config
+
+    async def init(self):
+        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canAnnounce', 'True')
 
     @command()
     @decorate_cog_command('require_perm_cog_command', 'canAnnounce', 'True')

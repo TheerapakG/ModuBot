@@ -20,7 +20,7 @@ MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '1'
 MODUBOT_VERSIONTYPE = 'b'
-MODUBOT_SUBVERSION = '1'
+MODUBOT_SUBVERSION = '2'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -54,13 +54,16 @@ class ModuBot(Bot):
         #         even if some command, cogs in a module is not loaded, it will not get skip 
         #     2: module init
         #         this stage should be use to check commands in the module that got loaded and
-        #         register features available after loaded. also uses to retrieve stuff from
-        #         crossmodule. init must throw if not successful
+        #         register features available after loaded. init must throw if not successful
         # 3: walk module again
         #     1: module post_init
         #         this stage should be use to check if dependency loaded correctly with features
         #         needed and register dependencies needed. post_init must throw if not successful
+        #     TODO: unload dependents automatically if not successful
         #     2: add to loaded
+        # 4: walk module again
+        #     1: module after_init
+        #         this means that stuff in crossmodule is safe to be retrieve.
 
         load_cogs = []
 
@@ -115,18 +118,18 @@ class ModuBot(Bot):
                 else:
                     self.log.debug('deps is not an iterable')
 
-            for modulename, cog in load_cogs:
-                if 'init' in dir(cog):
-                    self.log.debug('executing init in {}'.format(cog.qualified_name))
-                    potential = getattr(cog, 'init')
-                    self.log.debug(str(potential))
-                    self.log.debug(str(potential.__func__))
-                    if iscoroutinefunction(potential.__func__):
-                        await potential()
-                    elif isfunction(potential.__func__):
-                        potential()
-                    else:
-                        self.log.debug('init is neither funtion nor coroutine function')
+        for modulename, cog in load_cogs:
+            if 'init' in dir(cog):
+                self.log.debug('executing init in {}'.format(cog.qualified_name))
+                potential = getattr(cog, 'init')
+                self.log.debug(str(potential))
+                self.log.debug(str(potential.__func__))
+                if iscoroutinefunction(potential.__func__):
+                    await potential()
+                elif isfunction(potential.__func__):
+                    potential()
+                else:
+                    self.log.debug('init is neither funtion nor coroutine function')
 
         for modulename, cog in load_cogs:
             if 'post_init' in dir(cog):
@@ -140,6 +143,19 @@ class ModuBot(Bot):
                     potential()
                 else:
                     self.log.debug('post_init is neither funtion nor coroutine function')
+
+        for modulename, cog in load_cogs:
+            if 'after_init' in dir(cog):
+                self.log.debug('executing after_init in {}'.format(cog.qualified_name))
+                potential = getattr(cog, 'after_init')
+                self.log.debug(str(potential))
+                self.log.debug(str(potential.__func__))
+                if iscoroutinefunction(potential.__func__):
+                    await potential()
+                elif isfunction(potential.__func__):
+                    potential()
+                else:
+                    self.log.debug('after_init is neither funtion nor coroutine function')
 
     async def _prepare_load_module(self, modulename):
         if modulename in self.crossmodule.modules_loaded():

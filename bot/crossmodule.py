@@ -41,14 +41,20 @@ class CrossModule:
             return discord_check(self._preds[name](ctx))
         return check_use_name
 
-    def register_object(self, obj):
-        self._objs[obj.__name__] = obj
+    def register_object(self, name, obj):
+        self._objs[name] = obj
 
-    def unregister_object(self, obj):
-        del self._objs[obj.__name__]
+    def unregister_object(self, name):
+        del self._objs[name]
 
     def get_object(self, name):
         return self._objs[name]
+
+    def assign_dict_object(self, name, index, value):
+        '''
+        convenient function to assign to a dict object
+        '''
+        self._objs[name][index] = value
 
     def _add_module(self, module_name, module):
         self._features[module_name] = dict()
