@@ -5,7 +5,7 @@ import colorlog
 from importlib import import_module, reload
 from collections import namedtuple
 from inspect import iscoroutinefunction, isfunction
-from functools import partial
+from functools import partial, wraps
 import pkgutil
 import sys
 
@@ -19,8 +19,8 @@ import threading
 MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '1'
-MODUBOT_VERSIONTYPE = 'a'
-MODUBOT_SUBVERSION = '15'
+MODUBOT_VERSIONTYPE = 'b'
+MODUBOT_SUBVERSION = '1'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -39,6 +39,8 @@ class ModuBot(Bot):
         super().__init__(command_prefix = self.config.command_prefix, *args, **kwargs)
         self.help_command = None
         self.looplock = threading.Lock()
+        self._init = False
+        self._owner_id = None
 
     async def _load_modules(self, modulelist):
         # TODO: change into cog pre_init, cog init and cog post_init/ deps listing inside cogs
@@ -223,6 +225,39 @@ class ModuBot(Bot):
             ))
         register_bot(self)
 
+        app_info = await self.application_info()
+
+        if self._owner_id:
+            if not self.get_user(self._owner_id):
+                self.log.warning('Cannot find specified owner, falling back to application\'s owner')
+                self._owner_id = app_info.owner.id
+
+        if not self._owner_id:
+            self.log.info('Using application\'s owner')
+            self._owner_id = app_info.owner.id
+
+        self.log.info("Owner:\n    ID: {id}\n    name: {name}#{discriminator}\n".format(
+            id = self._owner_id,
+            name = self.get_user(self._owner_id).name,
+            discriminator = self.get_user(self._owner_id).discriminator
+            ))
+
+        self._init = True
+
+        for name, cog in self.cogs.items():
+            if 'on_ready' in dir(cog):
+                self.log.debug('executing on_ready in {}'.format(name))
+                potential = getattr(cog, 'on_ready')
+                self.log.debug(str(potential))
+                self.log.debug(str(potential.__func__))
+                if iscoroutinefunction(potential.__func__):
+                    await potential()
+                elif isfunction(potential.__func__):
+                    potential()
+                else:
+                    self.log.debug('post_init is neither funtion nor coroutine function')
+
+
     def run(self):
         self.thread = threading.currentThread()
         self.log.debug('running bot on thread {}'.format(threading.get_ident()))
@@ -237,14 +272,14 @@ class ModuBot(Bot):
 
     def logout_loopstopped(self):
         self.log.debug('on thread {}'.format(threading.get_ident()))
-        self.log.debug('logging out (loopstopped)..')
+        self.log.info('logging out (loopstopped)..')
         self.loop.run_until_complete(self._logout())
-        self.log.debug('canceling incomplete tasks...')
+        self.log.info('canceling incomplete tasks...')
         gathered = asyncio.gather(*asyncio.Task.all_tasks(self.loop), loop=self.loop)
         gathered.cancel()
-        self.log.debug('closing loop...')
+        self.log.info('closing loop...')
         self.loop.close()
-        self.log.debug('finished!')
+        self.log.info('finished!')
 
     def logout_looprunning(self):
         async def _stop():
@@ -253,22 +288,39 @@ class ModuBot(Bot):
 
         self.log.debug('on thread {}'.format(threading.get_ident()))
         self.log.debug('bot\'s thread status: {}'.format(self.thread.is_alive()))
-        self.log.debug('logging out (looprunning)..')
+        self.log.info('logging out (looprunning)..')
         future = asyncio.run_coroutine_threadsafe(self._logout(), self.loop)
         future.result()
         self.log.debug('stopping loop...')
         future = asyncio.run_coroutine_threadsafe(_stop(), self.loop)
         self.looplock.acquire()
-        self.log.debug('canceling incomplete tasks...')
+        self.log.info('canceling incomplete tasks...')
         gathered = asyncio.gather(*asyncio.Task.all_tasks(self.loop), loop=self.loop)
         gathered.cancel()
-        self.log.debug('closing loop...')
+        self.log.info('closing loop...')
         self.loop.close()
-        self.log.debug('finished!')
+        self.log.info('finished!')
 
     def logout(self):
-        self.log.debug('logging out...')
+        self.log.info('logging out...')
         if self.loop.is_running():
             self.logout_looprunning()
         else:
             self.logout_loopstopped()
+
+    class check_online:
+        def __init__(self):
+            pass
+
+        def __call__(self, func):
+            @wraps(func)
+            async def wrapper(bot, *args, **kwargs):
+                if bot._init:
+                    return await func(bot, *args, **kwargs)
+                else:
+                    raise Exception('bot is not online')
+            return wrapper
+
+    @check_online()
+    async def get_owner_id(self):
+        return self._owner_id

@@ -34,7 +34,7 @@ class Announce(Cog):
             await channel.send(announcestring)
 
     @command()
-    #@decorate_cog_command('require_perm_cog_command', 'canAnnounce', 'True')
+    @decorate_cog_command('require_perm_cog_command', 'canAnnounce', 'True')
     async def interval_announce(self, ctx, channel: Optional[TextChannel], interval: str, *, announcestring: str):
         """
         Usage:

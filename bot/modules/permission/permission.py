@@ -35,6 +35,9 @@ class Permission(Cog):
         self.perm_info = permconfig
         bot.crossmodule.register_decorator(update_wrapper(partial(self.require_perm_cog_command, coginst = self), self.require_perm_cog_command))
 
+    async def on_ready(self):
+        self.bot.log.debug('owner id: {}'.format(await self.bot.get_owner_id()))
+    
     @command()
     @require_perm_cog_command('canModifyPermission', 'True')
     async def add_permgroup(self, ctx, groupname: str):
