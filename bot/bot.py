@@ -19,8 +19,8 @@ import threading
 MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '2'
-MODUBOT_VERSIONTYPE = 'r'
-MODUBOT_SUBVERSION = ''
+MODUBOT_VERSIONTYPE = 'a'
+MODUBOT_SUBVERSION = '1'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -40,7 +40,12 @@ class ModuBot(Bot):
         self.help_command = None
         self.looplock = threading.Lock()
         self._init = False
+
         self._owner_id = None
+        if self.config.owner_id.isdigit():
+            self._owner_id = int(self.config.owner_id)
+        elif self.config.owner_id:
+            self._owner_id = self.config.owner_id
 
     async def _load_modules(self, modulelist):
         # TODO: change into cog pre_init, cog init and cog post_init/ deps listing inside cogs
@@ -243,14 +248,14 @@ class ModuBot(Bot):
 
         app_info = await self.application_info()
 
-        if self._owner_id:
-            if not self.get_user(self._owner_id):
-                self.log.warning('Cannot find specified owner, falling back to application\'s owner')
-                self._owner_id = app_info.owner.id
-
-        if not self._owner_id:
+        if self._owner_id == 'auto' or not self._owner_id:
             self.log.info('Using application\'s owner')
             self._owner_id = app_info.owner.id
+
+        else:
+            if not self.get_user(self._owner_id):
+                self.log.warning('Cannot find specified owner, falling back to application\'s owner')
+                self._owner_id = app_info.owner.id            
 
         self.log.info("Owner:\n    ID: {id}\n    name: {name}#{discriminator}\n".format(
             id = self._owner_id,
