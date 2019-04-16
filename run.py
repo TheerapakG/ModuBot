@@ -83,22 +83,29 @@ if __name__ == "__main__":
     
     try:
         bot.run()
+        safe_shutdown.acquire()
         if not shutdown:
             shutdown = True
             log.info('\nShutting down ... (RunExit)')
             bot.logout()
+        safe_shutdown.release()
     except KeyboardInterrupt:
         if not abortKeyboardInterrupt:
+            safe_shutdown.acquire()
             if not shutdown:
                 shutdown = True
                 log.info('\nShutting down ... (KeyboardInterrupt)')
                 bot.logout()
+            safe_shutdown.release()
     except RuntimeError:
+        safe_shutdown.acquire()
         if not shutdown:
             shutdown = True
             log.info('\nShutting down ... (RuntimeError)')
             bot.logout()
+        safe_shutdown.release()
     try:
         safe_shutdown.acquire()
+        safe_shutdown.release()
     except KeyboardInterrupt:
         pass
