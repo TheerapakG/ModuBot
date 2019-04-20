@@ -26,6 +26,7 @@ class Announce(Cog):
 
     async def init(self):
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canAnnounce', 'True')
+        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canAnnounce', 'False')
 
     @command()
     @decorate_cog_command('require_perm_cog_command', 'canAnnounce', 'True')

@@ -30,15 +30,18 @@ class Permission(Cog):
         self.perm_member = dict()
         self.perm_role = dict()
         self.perm_permissive = dict()
+        self.perm_default = dict()
 
     async def pre_init(self, bot, config):
         self.bot = bot
         self.perm_info = config
         bot.crossmodule.register_decorator(update_wrapper(partial(self.require_perm_cog_command, coginst = self), self.require_perm_cog_command))
         bot.crossmodule.register_object('PermissivePerm', dict())
+        bot.crossmodule.register_object('DefaultPerm', dict())
 
     async def after_init(self):
         self.perm_permissive = self.bot.crossmodule.get_object('PermissivePerm')
+        self.perm_default = self.bot.crossmodule.get_object('DefaultPerm')
 
     async def on_ready(self):
         self.bot.log.debug('owner id: {}'.format(await self.bot.get_owner_id()))
@@ -141,20 +144,25 @@ class Permission(Cog):
     async def have_perm(self, member, perm, value, comparer):
         roles = member.roles
 
-        # TODO: make it so owner can override this
-        if member.id == await self.bot.get_owner_id():
+        skip_owner_check = False
+
+        for group in self.perms:
+            perm = comparer(self.perm_info[group][perm], value)
+            if member.id in self.perm_member[group]:
+                if perm:
+                    return True
+                skip_owner_check = True
+            for role in roles:
+                if role.id in self.perm_role[group]:
+                    if perm:
+                        return True
+                    skip_owner_check = True
+
+        if not skip_owner_check and member.id == await self.bot.get_owner_id():
             if comparer(self.perm_permissive[perm], value):
                 return True
 
-        for group in self.perms:
-            if comparer(self.perm_info[group][perm], value):
-                if member.id in self.perm_member[group]:
-                    return True
-                for role in roles:
-                    if role.id in self.perm_role[group]:
-                        return True
-
-        return False
+        return comparer(self.perm_default[perm], value)
 
 class PermError(CommandError):
     pass

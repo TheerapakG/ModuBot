@@ -20,7 +20,7 @@ MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '2'
 MODUBOT_VERSIONTYPE = 'a'
-MODUBOT_SUBVERSION = '2'
+MODUBOT_SUBVERSION = '3'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -330,9 +330,6 @@ class ModuBot(Bot):
             self.logout_loopstopped()
 
     class check_online:
-        def __init__(self):
-            pass
-
         def __call__(self, func):
             @wraps(func)
             async def wrapper(bot, *args, **kwargs):
