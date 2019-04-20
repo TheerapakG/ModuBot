@@ -55,8 +55,10 @@ if __name__ == "__main__":
 
     shutdown = False
     safe_shutdown = threading.Lock()
+    spawned_thread_safe_exit = threading.Lock()
 
     def logouthandler(sig, stackframe=None):
+        log.debug('\nAcquiring ... (logouthandler/{})'.format(system()))
         safe_shutdown.acquire()
         global shutdown
         if not shutdown:            
@@ -64,7 +66,10 @@ if __name__ == "__main__":
             log.info('\nShutting down ... (logouthandler/{})'.format(system()))
             log.info(sig)
             bot.logout()
+        log.debug('\nReleasing ... (logouthandler/{})'.format(system()))
         safe_shutdown.release()
+        spawned_thread_safe_exit.acquire() # This help main thread to not get KeyboardInterrupt while doing work
+        spawned_thread_safe_exit.release() # At least for pywin32
 
     abortKeyboardInterrupt = False
     
@@ -83,29 +88,40 @@ if __name__ == "__main__":
     
     try:
         bot.run()
+        spawned_thread_safe_exit.acquire()
+        log.debug('\nAcquiring ... (RunExit)')
         safe_shutdown.acquire()
-        if not shutdown:
+        if not shutdown:            
             shutdown = True
             log.info('\nShutting down ... (RunExit)')
             bot.logout()
+        log.debug('\nReleasing ... (RunExit)')
         safe_shutdown.release()
+        spawned_thread_safe_exit.release()
     except KeyboardInterrupt:
         if not abortKeyboardInterrupt:
+            log.debug('\nAcquiring ... (KeyboardInterrupt)')
             safe_shutdown.acquire()
             if not shutdown:
                 shutdown = True
                 log.info('\nShutting down ... (KeyboardInterrupt)')
                 bot.logout()
+            log.debug('\nReleasing ... (KeyboardInterrupt)')
             safe_shutdown.release()
     except RuntimeError:
+        log.debug('\nAcquiring ... (RuntimeError)')
         safe_shutdown.acquire()
         if not shutdown:
             shutdown = True
             log.info('\nShutting down ... (RuntimeError)')
             bot.logout()
+        log.debug('\nReleasing ... (RuntimeError)')
         safe_shutdown.release()
+
     try:
+        log.debug('\nAcquiring ... (Final)')
         safe_shutdown.acquire()
+        log.debug('\nReleasing ... (Final)')
         safe_shutdown.release()
     except KeyboardInterrupt:
         pass

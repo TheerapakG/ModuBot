@@ -20,7 +20,7 @@ MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '2'
 MODUBOT_VERSIONTYPE = 'a'
-MODUBOT_SUBVERSION = '3'
+MODUBOT_SUBVERSION = '4'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -342,3 +342,6 @@ class ModuBot(Bot):
     @check_online()
     async def get_owner_id(self):
         return self._owner_id
+
+    def online(self):
+        return self._init
