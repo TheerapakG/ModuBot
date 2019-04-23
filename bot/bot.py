@@ -13,14 +13,15 @@ from . import config
 from .utils import isiterable
 from .rich_guild import guilds, register_bot
 from .crossmodule import CrossModule
-from collections import namedtuple, deque
+from collections import namedtuple, deque, defaultdict
 import threading
+import traceback
 
 MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '2'
 MODUBOT_VERSIONTYPE = 'a'
-MODUBOT_SUBVERSION = '4'
+MODUBOT_SUBVERSION = '5'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -29,6 +30,8 @@ class ModuBot(Bot):
     ModuleTuple = namedtuple('ModuleTuple', ['name', 'module', 'module_spfc_config'])
 
     def __init__(self, *args, logname = "ModuBot", conf = config.ConfigDefaults, loghandlerlist = [], **kwargs):
+        self.bot_version = (MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
+        self.bot_str = MODUBOT_STR
         self.thread = None
         self.config = conf
         self.crossmodule = CrossModule()
@@ -64,13 +67,62 @@ class ModuBot(Bot):
         #     1: module post_init
         #         this stage should be use to check if dependency loaded correctly with features
         #         needed and register dependencies needed. post_init must throw if not successful
-        #     TODO: unload dependents automatically if not successful
         #     2: add to loaded
         # 4: walk module again
         #     1: module after_init
-        #         this means that stuff in crossmodule is safe to be retrieve.
+        #         this means that stuff in crossmodule is safe to be retrieve. shall not fail
 
         load_cogs = []
+
+        available_module = set(self.crossmodule.imported.keys())
+
+        for moduleinfo in modulelist:
+            available_module.add(moduleinfo.name)
+
+        requirements = defaultdict(list)
+
+        for moduleinfo in modulelist:
+
+            if 'deps' in dir(moduleinfo.module):
+                self.log.debug('resolving deps in {}'.format(moduleinfo.name))
+                deps = getattr(moduleinfo.module, 'deps')
+                if isiterable(deps):
+                    for dep in deps:
+                        requirements[dep].append(moduleinfo.name)
+                else:
+                    self.log.debug('deps is not an iterable')
+
+        req_set = set(requirements.keys())
+
+        noreq_already = req_set - available_module
+        noreq = list(noreq_already)
+
+        req_not_met = set()
+
+        while noreq:
+            current = noreq.pop()
+            req_not_met.update(requirements[current])
+            for module in requirements[current]:
+                if module not in noreq_already:
+                    noreq.append(module)
+                    noreq_already.add(module)
+
+        if req_not_met:
+            self.log.warning('These following modules does not have dependencies required and will not be loaded: {}'.format(str(req_not_met)))
+
+        modulelist = [moduleinfo for moduleinfo in modulelist if moduleinfo.name not in req_not_met]
+
+        for moduleinfo in modulelist:
+            self.crossmodule._add_module(moduleinfo.name, moduleinfo.module)
+
+        for moduleinfo in modulelist:
+            if 'deps' in dir(moduleinfo.module):
+                self.log.debug('adding deps in {}'.format(moduleinfo.name))
+                deps = getattr(moduleinfo.module, 'deps')
+                if isiterable(deps):
+                    self.crossmodule._register_dependency(moduleinfo.name, deps)
+                else:
+                    self.log.debug('deps is not an iterable')
 
         for moduleinfo in modulelist:
             if 'cogs' in dir(moduleinfo.module):
@@ -83,19 +135,21 @@ class ModuBot(Bot):
                             potential = getattr(cg, 'pre_init')
                             self.log.debug(str(potential))
                             self.log.debug(str(potential.__func__))
-                            if iscoroutinefunction(potential.__func__):
-                                await potential(self, moduleinfo.module_spfc_config)
-                            elif isfunction(potential.__func__):
-                                potential(self, moduleinfo.module_spfc_config)
-                            else:
-                                self.log.debug('pre_init is neither funtion nor coroutine function')
+                            try:
+                                if iscoroutinefunction(potential.__func__):
+                                    await potential(self, moduleinfo.module_spfc_config)
+                                elif isfunction(potential.__func__):
+                                    potential(self, moduleinfo.module_spfc_config)
+                                else:
+                                    self.log.debug('pre_init is neither funtion nor coroutine function')
+                            except Exception:
+                                self.log.warning('failed pre-initializing cog {} in module {}'.format(cg.qualified_name, moduleinfo.name))
+                                self.log.debug(traceback.format_exc())
                         load_cogs.append((moduleinfo.name, cg))
                 else:
                     self.log.debug('cogs is not an iterable')
 
         for moduleinfo in modulelist:
-            self.crossmodule._add_module(moduleinfo.name, moduleinfo.module)
-
             if 'commands' in dir(moduleinfo.module):
                 self.log.debug('loading commands in {}'.format(moduleinfo.name))
                 commands = getattr(moduleinfo.module, 'commands')
@@ -108,33 +162,23 @@ class ModuBot(Bot):
                 else:
                     self.log.debug('commands is not an iterable')
 
-        self.log.debug('loading cogs')
-        for modulename, cog in load_cogs:
-            self.add_cog(cog)
-            self.crossmodule._cogs[modulename].append(cog.qualified_name)
-            self.log.debug('loaded {}'.format(cog.qualified_name))
-
-        for moduleinfo in modulelist:
-            if 'deps' in dir(moduleinfo.module):
-                self.log.debug('adding deps in {}'.format(moduleinfo.name))
-                deps = getattr(moduleinfo.module, 'deps')
-                if isiterable(deps):
-                    self.crossmodule._register_dependency(moduleinfo.name, deps)
-                else:
-                    self.log.debug('deps is not an iterable')
-
-        for modulename, cog in load_cogs:
+        for modulename, cog in load_cogs.copy():
             if 'init' in dir(cog):
                 self.log.debug('executing init in {}'.format(cog.qualified_name))
                 potential = getattr(cog, 'init')
                 self.log.debug(str(potential))
                 self.log.debug(str(potential.__func__))
-                if iscoroutinefunction(potential.__func__):
-                    await potential()
-                elif isfunction(potential.__func__):
-                    potential()
-                else:
-                    self.log.debug('init is neither funtion nor coroutine function')
+                try:
+                    if iscoroutinefunction(potential.__func__):
+                        await potential()
+                    elif isfunction(potential.__func__):
+                        potential()
+                    else:
+                        self.log.debug('init is neither funtion nor coroutine function')
+                except Exception:
+                    self.log.warning('failed initializing cog {} in module {}'.format(cog.qualified_name, modulename))
+                    self.log.debug(traceback.format_exc())
+                    load_cogs.remove((modulename, cog))
 
         for modulename, cog in load_cogs:
             if 'post_init' in dir(cog):
@@ -142,12 +186,23 @@ class ModuBot(Bot):
                 potential = getattr(cog, 'post_init')
                 self.log.debug(str(potential))
                 self.log.debug(str(potential.__func__))
-                if iscoroutinefunction(potential.__func__):
-                    await potential()
-                elif isfunction(potential.__func__):
-                    potential()
-                else:
-                    self.log.debug('post_init is neither funtion nor coroutine function')
+                try:
+                    if iscoroutinefunction(potential.__func__):
+                        await potential()
+                    elif isfunction(potential.__func__):
+                        potential()
+                    else:
+                        self.log.debug('post_init is neither funtion nor coroutine function')
+                except Exception:
+                    self.log.warning('failed post-initializing cog {} in module {}'.format(cog.qualified_name, modulename))
+                    self.log.debug(traceback.format_exc())
+                    load_cogs.remove((modulename, cog))
+
+        self.log.debug('loading cogs')
+        for modulename, cog in load_cogs:
+            self.add_cog(cog)
+            self.crossmodule._cogs[modulename].append(cog.qualified_name)
+            self.log.debug('loaded {}'.format(cog.qualified_name))
 
         for modulename, cog in load_cogs:
             if 'after_init' in dir(cog):
@@ -155,27 +210,42 @@ class ModuBot(Bot):
                 potential = getattr(cog, 'after_init')
                 self.log.debug(str(potential))
                 self.log.debug(str(potential.__func__))
-                if iscoroutinefunction(potential.__func__):
-                    await potential()
-                elif isfunction(potential.__func__):
-                    potential()
-                else:
-                    self.log.debug('after_init is neither funtion nor coroutine function')
+                try:
+                    if iscoroutinefunction(potential.__func__):
+                        await potential()
+                    elif isfunction(potential.__func__):
+                        potential()
+                    else:
+                        self.log.debug('after_init is neither funtion nor coroutine function')
+                except Exception:
+                    self.log.error('cog {} in module {} raised exception after initialization'.format(cog.qualified_name, modulename))
+                    self.log.debug(traceback.format_exc())
+                    self.remove_cog(cog)
+                    self.crossmodule._cogs[modulename].remove(cog)
 
     async def _prepare_load_module(self, modulename):
         if modulename in self.crossmodule.modules_loaded():
             await self.unload_modules([modulename])
-            reload(self.crossmodule.imported[modulename])
+            try:
+                reload(self.crossmodule.imported[modulename])
+            except:
+                pass
             module = self.crossmodule.imported[modulename]
         else:
-            module = import_module('.modules.{}'.format(modulename), 'bot')
+            try:
+                module = import_module('.modules.{}'.format(modulename), 'bot')
+            except:
+                pass
+                return
 
         return module
 
     async def _gen_modulelist(self, modulesname_config):
         modules = list()
         for modulename, moduleconfig in modulesname_config:
-            modules.append(self.ModuleTuple(modulename, await self._prepare_load_module(modulename), moduleconfig))
+            module = await self._prepare_load_module(modulename)
+            if module:
+                modules.append(self.ModuleTuple(modulename, module, moduleconfig))
 
         return modules
 

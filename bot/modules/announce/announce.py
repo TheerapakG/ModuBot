@@ -11,6 +11,8 @@ regex_parse_time = re.compile(r'^((?P<days>[\.\d]+?)d)?((?P<hours>[\.\d]+?)h)?((
 
 from datetime import timedelta
 
+deps = ['permission']
+
 class Announce(Cog):
 
     AnnounceTask = namedtuple('AnnounceTask', ['announcestring', 'interval', 'taskobj'])

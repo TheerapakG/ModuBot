@@ -2,6 +2,8 @@ from discord.ext.commands import Cog, command
 from ast import literal_eval # we don't want to erase someone's drive
 from ...decorator_helper import decorate_cog_command
 
+deps = ['permission']
+
 class ModuleManage(Cog):
 
     def __init__(self):
