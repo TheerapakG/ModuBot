@@ -46,4 +46,9 @@ class AsyncListView:
             await self._aft
             return ret
 
+    async def get_list(self):
+        await self._bef
+        ret = [await self._acc(obj) for obj in self._list]
+        await self._aft
+        return ret
     
