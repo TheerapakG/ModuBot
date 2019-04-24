@@ -11,6 +11,7 @@ class RichGuild:
         self._id = guildid
         self._voice_channel = None
         self._voice_client = None
+        self._player = None
 
     @property
     def id(self):
@@ -20,13 +21,9 @@ class RichGuild:
     def guild(self):
         return self._bot.get_guild(self._id)
 
-    async def _connected_voice_channel(self):
+    async def get_connected_voice_channel(self):
         async with self._aiolocks['c_voice_channel']:
             return self._voice_channel
-
-    @property
-    def connected_voice_channel(self):
-        return self._bot.loop.run_until_complete(self._connected_voice_channel())
 
     async def _move_channel(self, new_channel):
         async with self._aiolocks['c_voice_channel']:
@@ -44,26 +41,27 @@ class RichGuild:
             self._voice_client = await new_channel.connect()
             self.voice_channel = new_channel
 
-    @connected_voice_channel.setter
-    def connected_voice_channel(self, voice_channel):
+    async def set_connected_voice_channel(self, voice_channel):
         if self._voice_client:
             if voice_channel:
-                self._bot.loop.run_until_complete(self._move_channel(voice_channel))
+                await self._move_channel(voice_channel)
             else:
-                self._bot.loop.run_until_complete(self._disconnect_channel())
+                await self._disconnect_channel()
         else:
             if voice_channel:
-                self._bot.loop.run_until_complete(self._connect_channel(voice_channel))
+                await self._connect_channel(voice_channel)
             else:
-                return # @TheerapakG: TODO: raise exc
+                raise Exception("bot is not connected to any voice channel")
 
-    async def _connected_voice_client(self):
+    async def get_connected_voice_client(self):
         async with self._aiolocks['c_voice_channel']:
             return self._voice_client
 
-    @property
-    def connected_voice_client(self):
-        return self._bot.loop.run_until_complete(self._connected_voice_client())
+    async def get_player(self):
+        if self._player:
+            return self._player
+        else:
+            raise Exception("bot is not connected to any voice channel")
 
 def register_bot(bot):
     guilds[bot.user.id] = {guild.id:RichGuild(bot, guild.id) for guild in bot.guilds}
