@@ -21,7 +21,7 @@ MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '2'
 MODUBOT_VERSIONTYPE = 'a'
-MODUBOT_SUBVERSION = '9'
+MODUBOT_SUBVERSION = '10'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -261,7 +261,7 @@ class ModuBot(Bot):
         def gendependentlist():
             deplist = list()
             considerdeque = deque(modulenames)
-            considerset = set()
+            considerset = set(modulenames)
             while considerdeque:
                 node = considerdeque.pop()
                 deplist.append(node)

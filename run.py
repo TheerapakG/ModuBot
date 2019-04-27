@@ -51,7 +51,7 @@ if __name__ == "__main__":
 
     config = Config(ConfigDefaults.config_file)
     bot = ModuBot(loop=loop, conf=config, loghandlerlist=[sh, fh], max_messages=10000)
-    loop.run_until_complete(bot.load_modules([('default',{}), ('permission',{}), ('announce',{})]))
+    loop.run_until_complete(bot.load_modules([('default',{}), ('permission',{}), ('announce',{}), ('music',{})]))
 
     shutdown = False
     safe_shutdown = threading.Lock()

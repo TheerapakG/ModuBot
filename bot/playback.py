@@ -7,10 +7,11 @@ from functools import partial
 import subprocess
 
 class Entry:
-    def __init__(self):
+    def __init__(self, metadata):
         self._aiolocks = defaultdict(Lock)
         self._preparing_cache = False
         self._cached = False
+        self._metadata = metadata
 
     async def is_preparing_cache(self):
         async with self._aiolocks['preparing_cache_set']:
@@ -30,7 +31,7 @@ class Entry:
                 self._cached = True
 
     async def get_metadata(self):
-        pass
+        return self._metadata
 
 class Playlist:
     def __init__(self, *, precache = 1, persistent = False):
@@ -217,3 +218,8 @@ class Player:
                     async with self._aiolocks['playtask']:
                         self._play_task.cancel()
                     return
+
+    
+    async def kill(self):
+        async with self._aiolocks['kill']:
+            pass # save data
