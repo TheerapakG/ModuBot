@@ -3,6 +3,7 @@ from enum import Enum
 from collections import defaultdict, deque
 from typing import Union, Optional
 from discord import FFmpegPCMAudio, PCMVolumeTransformer
+from functools import partial
 import subprocess
 
 class Entry:
@@ -91,6 +92,7 @@ class Player:
         self._guild = guild
         self._player = None
         self._play_task = None
+        self._play_safe_task = None
         self.volume = volume
         self.state = PlayerState.PAUSE
 
@@ -98,71 +100,120 @@ class Player:
         async with self._aiolocks['playlist']:
             self._playlist = playlist
 
+    async def get_playlist(self):
+        async with self._aiolocks['playlist']:
+            return self._playlist
+
+    async def _play(self):
+        async with self._aiolocks['playtask']:
+            async with self._aiolocks['player']:
+                self.state = PlayerState.DOWNLOADING
+            async with self._aiolocks['playlist']:
+                entry, cache = await self._playlist._get_entry()
+
+            def _playback_finished(error = None):
+                async def _async_playback_finished():
+                    async with self._aiolocks['player']:
+                        self._player = None
+
+                    if error:
+                        raise error # pylint: disable=raising-bad-type
+
+                    create_task(self._play())  
+
+                future = run_coroutine_threadsafe(_async_playback_finished(), self._guild._bot.loop)
+                future.result()
+
+            async def _download_and_play():
+                await cache
+
+                boptions = "-nostdin"
+                aoptions = "-vn"
+
+                self._guild._bot.log.debug("Creating player with options: {} {} {}".format(boptions, aoptions, entry.filename))
+
+                source = PCMVolumeTransformer(
+                    FFmpegPCMAudio(
+                        entry.filename,
+                        before_options=boptions,
+                        options=aoptions,
+                        stderr=subprocess.PIPE
+                    ),
+                    self.volume
+                )
+
+                async with self._aiolocks['player']:
+                    self._player = self._guild._voice_client
+                    self._guild._voice_client.play(source, after=_playback_finished)
+                    self.state = PlayerState.PLAYING
+        
+            self._play_task = create_task(_download_and_play())
+
+        try:
+            await self._play_task
+        except CancelledError:
+            if self.state != PlayerState.PAUSE:
+                await self._play()
+
+    async def _play_safe(self, *callback):
+        async with self._aiolocks['playsafe']:
+            if not self._play_safe_task:
+                task = create_task(self._play())
+                def clear_play_safe_task():
+                    self._play_safe_task = None
+                task.add_done_callback(clear_play_safe_task)
+                for cb in callback:
+                    task.add_done_callback(cb)
+            else:
+                return
+
     async def play(self):
         async with self._aiolocks['play']:
-            if self.state == PlayerState.PLAYING:
-                return
-
-            if self._player:
-                self._player.resume()
-                return
-
-            async def _play():
-                async with self._aiolocks['playlist']:
-                    entry, cache = await self._playlist._get_entry()
-
-                def _playback_finished(error = None):
-                    async def _async_playback_finished():
-                        async with self._aiolocks['player']:
-                            self._player = None
-
-                        if error:
-                            raise error # pylint: disable=raising-bad-type
-
-                        create_task(_play())  
-
-                    future = run_coroutine_threadsafe(_async_playback_finished(), self._guild._bot.loop)
-                    future.result()
-
-                async def _download_and_play():
-                    self.state = PlayerState.DOWNLOADING
-                    await cache
-
-                    boptions = "-nostdin"
-                    aoptions = "-vn"
-
-                    self._guild._bot.log.debug("Creating player with options: {} {} {}".format(boptions, aoptions, entry.filename))
-
-                    source = PCMVolumeTransformer(
-                        FFmpegPCMAudio(
-                            entry.filename,
-                            before_options=boptions,
-                            options=aoptions,
-                            stderr=subprocess.PIPE
-                        ),
-                        self.volume
-                    )
-
-                    async with self._aiolocks['player']:
-                        self._player = self._guild._voice_client
-                        self._guild._voice_client.play(source, after=_playback_finished)
-                        self.state = PlayerState.PLAYING
-
-                async with self._aiolocks['playtask']:
-                    self._play_task = create_task(_download_and_play())
-
-                try:
-                    await self._play_task
-                except CancelledError:
-                    if self.state != PlayerState.PAUSE:
-                        await _play()
+            async with self._aiolocks['player']:
+                if self.state != PlayerState.PAUSE:
                     return
-            
-            create_task(_play())                
-        
+
+                if self._player:
+                    self._player.resume()
+                    return
+
+                await self._play_safe()
+
+    async def _pause(self):
+        async with self._aiolocks['player']:
+            self._player.pause()
+            self.state = PlayerState.PAUSE
 
     async def pause(self):
-        pass
+        async with self._aiolocks['pause']:
+            async with self._aiolocks['player']:
+                if self.state == PlayerState.PAUSE:
+                    return
+
+                elif self.state == PlayerState.PLAYING:
+                    self._player.stop()
+                    self.state = PlayerState.PAUSE
+                    return
+
+                elif self.state == PlayerState.DOWNLOADING:
+                    async with self._aiolocks['playtask']:
+                        self._play_task.add_done_callback(partial(create_task, self._pause()))
+                    return
+        
 
     async def skip(self):
-        pass
+        async with self._aiolocks['skip']:
+            async with self._aiolocks['player']:
+                if self.state == PlayerState.PAUSE:
+                    await self._play_safe(partial(create_task, self._pause()))
+                    return
+
+                elif self.state == PlayerState.PLAYING:
+                    self._player.pause()
+                    await self._play_safe()
+                    return
+
+                elif self.state == PlayerState.DOWNLOADING:
+                    async with self._aiolocks['playtask']:
+                        self._play_task.cancel()
+                    return
