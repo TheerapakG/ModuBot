@@ -24,31 +24,4 @@ def load_data(guild, filename, cls=None, default = None, defaultdecodecls = None
     with open('data/{}/{}'.format(guild.id, filename), 'r') as fp:
         data = json.load(fp, cls = cls)
     return data
-
-class AsyncListView:
-    def __init__(self, li, coro_before, coro_access, coro_after):
-        self._list = li
-        self._bef = coro_before
-        self._acc = coro_access
-        self._aft = coro_after
-
-    async def __getitem__(self, item):
-        if isinstance(item, slice):
-            await self._bef
-            ifnone = lambda a, b: b if a is None else a
-            ret = [await self._acc(i) for i in range(ifnone(item.start, 0), item.stop, ifnone(item.step, 1))]
-            await self._aft
-            return ret
-                
-        else:
-            await self._bef
-            ret = await self._acc(item)
-            await self._aft
-            return ret
-
-    async def get_list(self):
-        await self._bef
-        ret = [await self._acc(obj) for obj in self._list]
-        await self._aft
-        return ret
     
