@@ -75,6 +75,14 @@ class RichGuild:
                 return self._player
             else:
                 raise Exception("bot is not connected to any voice channel")
+    
+    async def set_playlist(self, playlist):
+        async with self._aiolocks['c_voice_channel']:
+            await self._player.set_playlist(playlist)
+
+    async def get_playlist(self):
+        async with self._aiolocks['c_voice_channel']:
+            return await self._player.get_playlist()
 
 def get_guild(bot, guild) -> RichGuild:
     return guilds[bot.user.id][guild.id]

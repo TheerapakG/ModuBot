@@ -12,6 +12,7 @@ class Entry:
         self._preparing_cache = False
         self._cached = False
         self._metadata = metadata
+        self._uri = None
 
     async def is_preparing_cache(self):
         async with self._aiolocks['preparing_cache_set']:
@@ -33,8 +34,12 @@ class Entry:
     async def get_metadata(self):
         return self._metadata
 
+    async def set_uri(self, uri):
+        self._uri = uri
+
 class Playlist:
-    def __init__(self, *, precache = 1, persistent = False):
+    def __init__(self, name, *, precache = 1, persistent = False):
+        self._name = name
         self._aiolocks = defaultdict(Lock)
         self._list = deque()
         self._cache_task = deque()
@@ -46,6 +51,9 @@ class Playlist:
                 return [await entry.get_metadata() for entry in self._list[item]]
             else:
                 return await self._list[item].get_metadata()
+
+    def get_name(self):
+        return self._name
 
     async def _get_entry(self):
         async with self._aiolocks['list']:
@@ -105,12 +113,24 @@ class Player:
         async with self._aiolocks['playlist']:
             return self._playlist
 
-    async def _play(self):
+    async def _play(self, *, play_fail_cb = None, play_success_cb = None):
         async with self._aiolocks['playtask']:
             async with self._aiolocks['player']:
                 self.state = PlayerState.DOWNLOADING
             async with self._aiolocks['playlist']:
-                entry, cache = await self._playlist._get_entry()
+                try:
+                    entry, cache = await self._playlist._get_entry()
+                except TypeError:
+                    self.state = PlayerState.PAUSE
+                    exc = Exception('Playlist is empty')
+                    if play_fail_cb:
+                        play_fail_cb(exc)
+                    else:
+                        raise exc from None
+                    return
+
+            if play_success_cb:
+                play_success_cb()
 
             def _playback_finished(error = None):
                 async def _async_playback_finished():
@@ -135,7 +155,7 @@ class Player:
 
                 source = PCMVolumeTransformer(
                     FFmpegPCMAudio(
-                        entry.filename,
+                        entry._uri,
                         before_options=boptions,
                         options=aoptions,
                         stderr=subprocess.PIPE
@@ -156,34 +176,47 @@ class Player:
             if self.state != PlayerState.PAUSE:
                 await self._play()
 
-    async def _play_safe(self, *callback):
+    async def _play_safe(self, *callback, play_fail_cb = None, play_success_cb = None):
         async with self._aiolocks['playsafe']:
             if not self._play_safe_task:
-                task = create_task(self._play())
-                def clear_play_safe_task():
+                task = create_task(self._play(play_fail_cb = play_fail_cb, play_success_cb = play_success_cb))
+                def clear_play_safe_task(future):
                     self._play_safe_task = None
                 task.add_done_callback(clear_play_safe_task)
+
+                def callback_dummy_future(cb):
+                    def _dummy(future):
+                        cb()
+                    return _dummy
+
                 for cb in callback:
-                    task.add_done_callback(cb)
+                    task.add_done_callback(callback_dummy_future(cb))
             else:
                 return
 
-    async def play(self):
+    async def play(self, *, play_fail_cb = None, play_success_cb = None):
         async with self._aiolocks['play']:
             async with self._aiolocks['player']:
                 if self.state != PlayerState.PAUSE:
+                    exc = Exception('player is not paused')
+                    if play_fail_cb:
+                        play_fail_cb(exc)
+                    else:
+                        raise exc
                     return
 
                 if self._player:
                     self._player.resume()
+                    play_success_cb()
                     return
 
-                await self._play_safe()
+                await self._play_safe(play_fail_cb = play_fail_cb, play_success_cb = play_success_cb)
 
     async def _pause(self):
         async with self._aiolocks['player']:
-            self._player.pause()
-            self.state = PlayerState.PAUSE
+            if self._player:
+                self._player.pause()
+                self.state = PlayerState.PAUSE
 
     async def pause(self):
         async with self._aiolocks['pause']:
