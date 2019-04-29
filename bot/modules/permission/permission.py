@@ -46,8 +46,8 @@ class Permission(Cog):
         self.bot = bot
         self.perm_info = config
         bot.crossmodule.register_decorator(update_wrapper(partial(self.require_perm_cog_command, coginst = self), self.require_perm_cog_command))
-        bot.crossmodule.register_object('PermissivePerm', permissive)
-        bot.crossmodule.register_object('DefaultPerm', default)
+        bot.crossmodule.register_object('PermissivePerm', permissive.copy())
+        bot.crossmodule.register_object('DefaultPerm', default.copy())
 
         if self.bot.online():
             for guild in self.bot.guilds:

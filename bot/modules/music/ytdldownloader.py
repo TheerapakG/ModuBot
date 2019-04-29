@@ -2,6 +2,8 @@ import os
 import asyncio
 import functools
 import youtube_dl
+from ...playback import Entry
+from ...utils import get_header, md5sum
 
 from concurrent.futures import ThreadPoolExecutor
 
@@ -31,21 +33,22 @@ youtube_dl.utils.bug_reports_message = lambda: ''
 '''
 
 class YtdlDownloader:
-    def __init__(self, download_folder=None):
+    def __init__(self, bot, download_folder=None):
+        self._bot = bot
         self.thread_pool = ThreadPoolExecutor(max_workers=2)
         self.unsafe_ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
         self.safe_ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
         self.safe_ytdl.params['ignoreerrors'] = True
-        os.makedirs(os.path.dirname('data/{}'.format(download_folder)), exist_ok=True)
-        self.download_folder = 'data/{}'.format(download_folder)
+        os.makedirs(os.path.dirname('/data/{}/'.format(download_folder)), exist_ok=True)
+        self.download_folder = '/data/{}'.format(download_folder)
 
-        if download_folder:
+        if self.download_folder:
             otmpl = self.unsafe_ytdl.params['outtmpl']
-            self.unsafe_ytdl.params['outtmpl'] = os.path.join(download_folder, otmpl)
-            # print("setting template to " + os.path.join(download_folder, otmpl))
+            self.unsafe_ytdl.params['outtmpl'] = os.path.join(self.download_folder, otmpl)
+            # print("setting template to " + os.path.join(self.download_folder, otmpl))
 
             otmpl = self.safe_ytdl.params['outtmpl']
-            self.safe_ytdl.params['outtmpl'] = os.path.join(download_folder, otmpl)
+            self.safe_ytdl.params['outtmpl'] = os.path.join(self.download_folder, otmpl)
 
 
     @property
@@ -82,3 +85,176 @@ class YtdlDownloader:
 
     async def safe_extract_info(self, loop, *args, **kwargs):
         return await loop.run_in_executor(self.thread_pool, functools.partial(self.safe_ytdl.extract_info, *args, **kwargs))
+
+class YtdlUrlEntry(Entry):
+    def __init__(self, url, title, duration, extractor, metadata, expected_filename=None):
+        self.url = url
+        self.title = title
+        self.duration = duration
+        self._extractor = extractor
+        super().__init__(metadata)
+        self._download_folder = self._extractor.download_folder
+        self._expected_filename = expected_filename
+        self._playlist = None
+
+    async def prepare_cache(self):
+        async with self._aiolocks['preparing_cache_set']:
+            if self._preparing_cache:
+                return
+            self._preparing_cache = True
+
+        extractor = os.path.basename(self._expected_filename).split('-')[0]
+
+        # the generic extractor requires special handling
+        if extractor == 'generic':
+            flistdir = [f.rsplit('-', 1)[0] for f in os.listdir(self._download_folder)]
+            expected_fname_noex, fname_ex = os.path.basename(self._expected_filename).rsplit('.', 1)
+
+            if expected_fname_noex in flistdir:
+                try:
+                    rsize = int(await get_header(self._playlist._bot.aiosession, self.url, 'CONTENT-LENGTH'))
+                except:
+                    rsize = 0
+
+                lfile = os.path.join(
+                    self._download_folder,
+                    os.listdir(self._download_folder)[flistdir.index(expected_fname_noex)]
+                )
+
+                # print("Resolved %s to %s" % (self.expected_filename, lfile))
+                lsize = os.path.getsize(lfile)
+                # print("Remote size: %s Local size: %s" % (rsize, lsize))
+
+                if lsize != rsize:
+                    await self._really_download(hashing=True)
+                else:
+                    # print("[Download] Cached:", self.url)
+                    self._uri = lfile
+
+            else:
+                # print("File not found in cache (%s)" % expected_fname_noex)
+                await self._really_download(hashing=True)
+
+        else:
+            ldir = os.listdir(self._download_folder)
+            flistdir = [f.rsplit('.', 1)[0] for f in ldir]
+            expected_fname_base = os.path.basename(self._expected_filename)
+            expected_fname_noex = expected_fname_base.rsplit('.', 1)[0]
+
+            # idk wtf this is but its probably legacy code
+            # or i have youtube to blame for changing shit again
+
+            if expected_fname_base in ldir:
+                self._uri = os.path.join(self._download_folder, expected_fname_base)
+                self._playlist._bot.log.info("Download cached: {}".format(self.url))
+
+            elif expected_fname_noex in flistdir:
+                self._playlist._bot.log.info("Download cached (different extension): {}".format(self.url))
+                self._uri = os.path.join(self._download_folder, ldir[flistdir.index(expected_fname_noex)])
+                self._playlist._bot.log.debug("Expected {}, got {}".format(
+                    self._expected_filename.rsplit('.', 1)[-1],
+                    self._uri.rsplit('.', 1)[-1]
+                ))
+            else:
+                await self._really_download()
+
+        # TODO: equalization
+
+        async with self._aiolocks['preparing_cache_set']:
+            async with self._aiolocks['cached_set']:
+                self._preparing_cache = False
+                self._cached = True
+
+    async def _really_download(self, *, hashing=False):
+        self._extractor._bot.log.info("Download started: {}".format(self.url))
+
+        retry = True
+        while retry:
+            try:
+                result = await self._extractor.extract_info(self._extractor._bot.loop, self.url, download=True)
+                break
+            except Exception as e:
+                raise e
+
+        self._extractor._bot.log.info("Download complete: {}".format(self.url))
+
+        if result is None:
+            self._extractor._bot.log.critical("YTDL has failed, everyone panic")
+            raise Exception("ytdl broke and hell if I know why")
+            # What the fuck do I do now?
+
+        self._uri = unhashed_fname = self._extractor.ytdl.prepare_filename(result)
+
+
+        # TODO: check storage limit
+
+
+        if hashing:
+            # insert the 8 last characters of the file hash to the file name to ensure uniqueness
+            self._uri = md5sum(unhashed_fname, 8).join('-.').join(unhashed_fname.rsplit('.', 1))
+
+            if os.path.isfile(self._uri):
+                # Oh bother it was actually there.
+                os.unlink(unhashed_fname)
+            else:
+                # Move the temporary file to it's final location.
+                os.rename(unhashed_fname, self._uri)
+
+class WrongEntryTypeError(Exception):
+    def __init__(self, message, is_playlist, use_url):
+        super().__init__(message)
+        self.is_playlist = is_playlist
+        self.use_url = use_url
+
+async def get_entry(song_url, extractor, metadata):
+    try:
+        info = await extractor.extract_info(extractor._bot.loop, song_url, download=False)
+    except Exception as e:
+        raise Exception('Could not extract information from {}\n\n{}'.format(song_url, e))
+
+    if not info:
+        raise Exception('Could not extract information from %s' % song_url)
+
+    # TODO: Sort out what happens next when this happens
+    if info.get('_type', None) == 'playlist':
+        raise WrongEntryTypeError("This is a playlist.", True, info.get('webpage_url', None) or info.get('url', None))
+
+    if info.get('is_live', False):
+        # TODO: return stream entry
+        pass
+
+    # TODO: Extract this to its own function
+    if info['extractor'] in ['generic', 'Dropbox']:
+        extractor._bot.log.debug('Detected a generic extractor, or Dropbox')
+        try:
+            headers = await get_header(extractor._bot.aiosession, info['url'])
+            content_type = headers.get('CONTENT-TYPE')
+            extractor._bot.log.debug("Got content type {}".format(content_type))
+        except Exception as e:
+            extractor._bot.log.warning("Failed to get content type for url {} ({})".format(song_url, e))
+            content_type = None
+
+        if content_type:
+            if content_type.startswith(('application/', 'image/')):
+                if not any(x in content_type for x in ('/ogg', '/octet-stream')):
+                    # How does a server say `application/ogg` what the actual fuck
+                    raise Exception("Invalid content type \"%s\" for url %s" % (content_type, song_url))
+
+            elif content_type.startswith('text/html') and info['extractor'] == 'generic':
+                extractor._bot.log.warning("Got text/html for content-type, this might be a stream.")
+                # TODO: return stream entry
+                pass
+
+            elif not content_type.startswith(('audio/', 'video/')):
+                extractor._bot.log.warning("Questionable content-type \"{}\" for url {}".format(content_type, song_url))
+
+    entry = YtdlUrlEntry(
+        song_url,
+        info.get('title', 'Untitled'),
+        info.get('duration', 0) or 0,
+        extractor,
+        metadata,
+        extractor.ytdl.prepare_filename(info)
+    )
+
+    return entry

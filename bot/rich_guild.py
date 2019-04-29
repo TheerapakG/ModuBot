@@ -51,7 +51,7 @@ class RichGuild:
         async with self._aiolocks['c_voice_channel']:
             self._voice_client = await new_channel.connect()
             self.voice_channel = new_channel
-            self._player = Player(self.voice_channel)
+            self._player = Player(self)
 
     async def set_connected_voice_channel(self, voice_channel):
         if self._voice_client:

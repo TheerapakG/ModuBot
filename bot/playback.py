@@ -4,6 +4,8 @@ from collections import defaultdict, deque
 from typing import Union, Optional
 from discord import FFmpegPCMAudio, PCMVolumeTransformer
 from functools import partial
+from .utils import callback_dummy_future
+import traceback
 import subprocess
 
 class Entry:
@@ -24,6 +26,8 @@ class Entry:
 
     async def prepare_cache(self):
         async with self._aiolocks['preparing_cache_set']:
+            if self._preparing_cache:
+                return
             self._preparing_cache = True
 
         async with self._aiolocks['preparing_cache_set']:
@@ -38,7 +42,8 @@ class Entry:
         self._uri = uri
 
 class Playlist:
-    def __init__(self, name, *, precache = 1, persistent = False):
+    def __init__(self, name, bot, *, precache = 1, persistent = False):
+        self._bot = bot
         self._name = name
         self._aiolocks = defaultdict(Lock)
         self._list = deque()
@@ -62,6 +67,10 @@ class Playlist:
 
             entry = self._list.popleft()
             cache = self._cache_task.popleft()
+            if self._precache <= len(self._list):
+                self._cache_task.append(
+                    create_task(self._list[self._precache - 1].prepare_cache())
+                    )
 
         return (entry, cache)
 
@@ -69,8 +78,12 @@ class Playlist:
         async with self._aiolocks['list']:
             if head:
                 self._list.appendleft(entry)
+                position = 0
             else:
                 self._list.append(entry)
+                position = len(self._list) - 1
+            if self._precache > position:
+                self._cache_task.insert(position, create_task(self._list[position].prepare_cache()))
 
     async def remove_position(self, position):
         async with self._aiolocks['list']:
@@ -105,6 +118,10 @@ class Player:
         self.volume = volume
         self.state = PlayerState.PAUSE
 
+    async def status(self):
+        async with self._aiolocks['player']:
+            return self.state
+
     async def set_playlist(self, playlist: Optional[Playlist]):
         async with self._aiolocks['playlist']:
             self._playlist = playlist
@@ -120,6 +137,9 @@ class Player:
             async with self._aiolocks['playlist']:
                 try:
                     entry, cache = await self._playlist._get_entry()
+                    self._guild._bot.log.debug('got entry...')
+                    self._guild._bot.log.debug(str(entry))
+                    self._guild._bot.log.debug(str(cache))
                 except TypeError:
                     self.state = PlayerState.PAUSE
                     exc = Exception('Playlist is empty')
@@ -146,12 +166,21 @@ class Player:
                 future.result()
 
             async def _download_and_play():
-                await cache
+                try:
+                    self._guild._bot.log.debug('waiting for cache...')
+                    await cache
+                    self._guild._bot.log.debug('finish cache...')
+                except:
+                    self._guild._bot.log.error('cannot cache...')
+                    self._guild._bot.log.error(traceback.format_exc())
+                    async with self._aiolocks['player']:
+                        if self.state != PlayerState.PAUSE:
+                            await self._play()                    
 
                 boptions = "-nostdin"
                 aoptions = "-vn"
 
-                self._guild._bot.log.debug("Creating player with options: {} {} {}".format(boptions, aoptions, entry.filename))
+                self._guild._bot.log.debug("Creating player with options: {} {} {}".format(boptions, aoptions, entry._uri))
 
                 source = PCMVolumeTransformer(
                     FFmpegPCMAudio(
@@ -171,10 +200,12 @@ class Player:
             self._play_task = create_task(_download_and_play())
 
         try:
+            self._guild._bot.log.debug('waiting for task to play...')
             await self._play_task
         except CancelledError:
-            if self.state != PlayerState.PAUSE:
-                await self._play()
+            async with self._aiolocks['player']:
+                if self.state != PlayerState.PAUSE:
+                    await self._play()
 
     async def _play_safe(self, *callback, play_fail_cb = None, play_success_cb = None):
         async with self._aiolocks['playsafe']:
@@ -183,11 +214,6 @@ class Player:
                 def clear_play_safe_task(future):
                     self._play_safe_task = None
                 task.add_done_callback(clear_play_safe_task)
-
-                def callback_dummy_future(cb):
-                    def _dummy(future):
-                        cb()
-                    return _dummy
 
                 for cb in callback:
                     task.add_done_callback(callback_dummy_future(cb))
@@ -214,9 +240,10 @@ class Player:
 
     async def _pause(self):
         async with self._aiolocks['player']:
-            if self._player:
-                self._player.pause()
-                self.state = PlayerState.PAUSE
+            if self.state != PlayerState.PAUSE:
+                if self._player:
+                    self._player.pause()
+                    self.state = PlayerState.PAUSE
 
     async def pause(self):
         async with self._aiolocks['pause']:
@@ -231,7 +258,11 @@ class Player:
 
                 elif self.state == PlayerState.DOWNLOADING:
                     async with self._aiolocks['playtask']:
-                        self._play_task.add_done_callback(partial(create_task, self._pause()))
+                        self._play_task.add_done_callback(
+                            callback_dummy_future(
+                                partial(create_task, self._pause())
+                            )
+                        )
                     return
         
 
