@@ -55,7 +55,7 @@ class YtdlDownloader:
     def ytdl(self):
         return self.safe_ytdl
 
-    async def extract_info(self, loop, *args, on_error=None, retry_on_error=False, **kwargs):
+    async def extract_info(self, *args, on_error=None, retry_on_error=False, **kwargs):
         """
             Runs ytdl.extract_info within the threadpool. Returns a future that will fire when it's done.
             If `on_error` is passed and an exception is raised, the exception will be caught and passed to
@@ -63,28 +63,90 @@ class YtdlDownloader:
         """
         if callable(on_error):
             try:
-                return await loop.run_in_executor(self.thread_pool, functools.partial(self.unsafe_ytdl.extract_info, *args, **kwargs))
+                return await self._bot.loop.run_in_executor(self.thread_pool, functools.partial(self.unsafe_ytdl.extract_info, *args, **kwargs))
 
             except Exception as e:
 
                 # (youtube_dl.utils.ExtractorError, youtube_dl.utils.DownloadError)
                 # I hope I don't have to deal with ContentTooShortError's
                 if asyncio.iscoroutinefunction(on_error):
-                    asyncio.ensure_future(on_error(e), loop=loop)
+                    asyncio.ensure_future(on_error(e), loop=self._bot.loop)
 
                 elif asyncio.iscoroutine(on_error):
-                    asyncio.ensure_future(on_error, loop=loop)
+                    asyncio.ensure_future(on_error, loop=self._bot.loop)
 
                 else:
-                    loop.call_soon_threadsafe(on_error, e)
+                    self._bot.loop.call_soon_threadsafe(on_error, e)
 
                 if retry_on_error:
-                    return await self.safe_extract_info(loop, *args, **kwargs)
+                    return await self.safe_extract_info(self._bot.loop, *args, **kwargs)
         else:
-            return await loop.run_in_executor(self.thread_pool, functools.partial(self.unsafe_ytdl.extract_info, *args, **kwargs))
+            return await self._bot.loop.run_in_executor(self.thread_pool, functools.partial(self.unsafe_ytdl.extract_info, *args, **kwargs))
 
-    async def safe_extract_info(self, loop, *args, **kwargs):
-        return await loop.run_in_executor(self.thread_pool, functools.partial(self.safe_ytdl.extract_info, *args, **kwargs))
+    async def safe_extract_info(self, *args, **kwargs):
+        return await self._bot.loop.run_in_executor(self.thread_pool, functools.partial(self.safe_ytdl.extract_info, *args, **kwargs))
+
+    async def process_url_to_info(self, song_url, on_search_error = None):
+        while True:
+            try:
+                info = await self.extract_info(song_url, download=False, process=False)
+                # If there is an exception arise when processing we go on and let extract_info down the line report it
+                # because info might be a playlist and thing that's broke it might be individual entry
+                try:
+                    info_process = await self.extract_info(song_url, download=False)
+                except:
+                    info_process = None
+                    
+                self._bot.log.debug(info)
+                if info_process and info and info_process.get('_type', None) == 'playlist' and 'entries' not in info and not info.get('url', '').startswith('ytsearch'):
+                    use_url = info_process.get('webpage_url', None) or info_process.get('url', None)
+                    if use_url == song_url:
+                        self._bot.log.warning("Determined incorrect entry type, but suggested url is the same.  Help.")
+                        break # If we break here it will break things down the line and give "This is a playlist" exception as a result
+
+                    self._bot.log.debug("Assumed url \"%s\" was a single entry, was actually a playlist" % song_url)
+                    self._bot.log.debug("Using \"%s\" instead" % use_url)
+                    song_url = use_url
+                else:
+                    break
+
+            except Exception as e:
+                if 'unknown url type' in str(e):
+                    song_url = song_url.replace(':', '')  # it's probably not actually an extractor
+                    info = await self.extract_info(song_url, download=False, process=False)
+                else:
+                    raise e
+
+        if not info:
+            raise Exception("That video cannot be played. Try using the stream command.")
+
+        # abstract the search handling away from the user
+        # our ytdl options allow us to use search strings as input urls
+        if info.get('url', '').startswith('ytsearch'):
+            info = await self.extract_info(
+                song_url,
+                download=False,
+                process=True,    # ASYNC LAMBDAS WHEN
+                on_error=on_search_error,
+                retry_on_error=True
+            )
+
+            if not info:
+                raise Exception(
+                    "Error extracting info from search string, youtubedl returned no data. "
+                    "You may need to restart the bot if this continues to happen."
+                )
+
+            if not all(info.get('entries', [])):
+                # empty list, no data
+                self._bot.log.debug("Got empty list, no data")
+                return
+
+            # TODO: handle 'webpage_url' being 'ytsearch:...' or extractor type
+            song_url = info['entries'][0]['webpage_url']
+            info = await self.extract_info(song_url, download=False, process=False)
+
+        return (info, song_url)
 
 class YtdlUrlEntry(Entry):
     def __init__(self, url, title, duration, extractor, metadata, expected_filename=None):
@@ -95,7 +157,6 @@ class YtdlUrlEntry(Entry):
         super().__init__(metadata)
         self._download_folder = self._extractor.download_folder
         self._expected_filename = expected_filename
-        self._playlist = None
 
     async def prepare_cache(self):
         async with self._aiolocks['preparing_cache_set']:
@@ -112,7 +173,7 @@ class YtdlUrlEntry(Entry):
 
             if expected_fname_noex in flistdir:
                 try:
-                    rsize = int(await get_header(self._playlist._bot.aiosession, self.url, 'CONTENT-LENGTH'))
+                    rsize = int(await get_header(self._extractor._bot.aiosession, self.url, 'CONTENT-LENGTH'))
                 except:
                     rsize = 0
 
@@ -146,12 +207,12 @@ class YtdlUrlEntry(Entry):
 
             if expected_fname_base in ldir:
                 self._uri = os.path.join(self._download_folder, expected_fname_base)
-                self._playlist._bot.log.info("Download cached: {}".format(self.url))
+                self._extractor._bot.log.info("Download cached: {}".format(self.url))
 
             elif expected_fname_noex in flistdir:
-                self._playlist._bot.log.info("Download cached (different extension): {}".format(self.url))
+                self._extractor._bot.log.info("Download cached (different extension): {}".format(self.url))
                 self._uri = os.path.join(self._download_folder, ldir[flistdir.index(expected_fname_noex)])
-                self._playlist._bot.log.debug("Expected {}, got {}".format(
+                self._extractor._bot.log.debug("Expected {}, got {}".format(
                     self._expected_filename.rsplit('.', 1)[-1],
                     self._uri.rsplit('.', 1)[-1]
                 ))

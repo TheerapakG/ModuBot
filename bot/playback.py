@@ -105,6 +105,7 @@ class PlayerState(Enum):
     PLAYING = 0
     PAUSE = 1
     DOWNLOADING = 2
+    WAITING = 3
 
 class Player:
     def __init__(self, guild, volume = 0.15):

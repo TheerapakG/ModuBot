@@ -166,65 +166,14 @@ class Music(Cog):
         # This lock prevent spamming play command to add entries that exceeds time limit/ maximum song limit
         async with self._aiolocks['play_{}'.format(ctx.author.id)]:
             # Try to determine entry type, if _type is playlist then there should be entries
-            while True:
-                try:
-                    info = await self.downloader.extract_info(ctx.bot.loop, song_url, download=False, process=False)
-                    info_process = await self.downloader.extract_info(ctx.bot.loop, song_url, download=False)
-                    ctx.bot.log.debug(info)
-                    if info_process and info and info_process.get('_type', None) == 'playlist' and 'entries' not in info and not info.get('url', '').startswith('ytsearch'):
-                        use_url = info_process.get('webpage_url', None) or info_process.get('url', None)
-                        if use_url == song_url:
-                            ctx.bot.log.warning("Determined incorrect entry type, but suggested url is the same.  Help.")
-                            break # If we break here it will break things down the line and give "This is a playlist" exception as a result
-
-                        ctx.bot.log.debug("Assumed url \"%s\" was a single entry, was actually a playlist" % song_url)
-                        ctx.bot.log.debug("Using \"%s\" instead" % use_url)
-                        song_url = use_url
-                    else:
-                        break
-
-                except Exception as e:
-                    if 'unknown url type' in str(e):
-                        song_url = song_url.replace(':', '')  # it's probably not actually an extractor
-                        info = await self.downloader.extract_info(ctx.bot.loop, song_url, download=False, process=False)
-                    else:
-                        raise e
-
-            if not info:
-                raise Exception("That video cannot be played. Try using the stream command.")
+            info, song_url = await self.downloader.process_url_to_info(
+                song_url,
+                on_search_error = lambda e: create_task(
+                    ctx.send("```\n%s\n```" % e)
+                )
+            )
 
             # TODO: check extractor
-
-            # abstract the search handling away from the user
-            # our ytdl options allow us to use search strings as input urls
-            if info.get('url', '').startswith('ytsearch'):
-                info = await self.downloader.extract_info(
-                    ctx.bot.loop,
-                    song_url,
-                    download=False,
-                    process=True,    # ASYNC LAMBDAS WHEN
-                    on_error=lambda e: create_task(
-                        ctx.send("```\n%s\n```" % e)
-                    ),
-                    retry_on_error=True
-                )
-
-                if not info:
-                    raise Exception(
-                        "Error extracting info from search string, youtubedl returned no data. "
-                        "You may need to restart the bot if this continues to happen."
-                    )
-
-                if not all(info.get('entries', [])):
-                    # empty list, no data
-                    ctx.bot.log.debug("Got empty list, no data")
-                    return
-
-                # TODO: handle 'webpage_url' being 'ytsearch:...' or extractor type
-                song_url = info['entries'][0]['webpage_url']
-                info = await self.downloader.extract_info(ctx.bot.loop, song_url, download=False, process=False)
-                # Now I could just do: return await self.cmd_play(player, channel, author, song_url)
-                # But this is probably fine
 
             # If it's playlist
             if 'entries' in info:
