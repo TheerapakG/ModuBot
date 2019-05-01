@@ -2,9 +2,10 @@ from asyncio import Lock, create_task, CancelledError, run_coroutine_threadsafe,
 from enum import Enum
 from collections import defaultdict, deque
 from typing import Union, Optional
-from discord import FFmpegPCMAudio, PCMVolumeTransformer
+from discord import FFmpegPCMAudio, PCMVolumeTransformer, AudioSource
 from functools import partial
 from .utils import callback_dummy_future
+from itertools import islice
 import traceback
 import subprocess
 
@@ -35,7 +36,7 @@ class Entry:
                 self._preparing_cache = False
                 self._cached = True
 
-    async def get_metadata(self):
+    def get_metadata(self):
         return self._metadata
 
     async def set_uri(self, uri):
@@ -56,6 +57,15 @@ class Playlist:
                 return [await entry.get_metadata() for entry in self._list[item]]
             else:
                 return await self._list[item].get_metadata()
+
+    async def stop(self):
+        async with self._aiolocks['list']:
+            for cache in self._cache_task:
+                cache.cancel()
+                try:
+                    await cache
+                except:
+                    pass
 
     def get_name(self):
         return self._name
@@ -101,12 +111,39 @@ class Playlist:
         async with self._aiolocks['list']:
             return self._list.index(entry)
 
+    async def estimate_time_until(self, position):
+        async with self._aiolocks['list']:
+            estimated_time = sum(e.duration for e in islice(self._list, position - 1))
+        return estimated_time
+
+    async def estimate_time_until_entry(self, entry):
+        estimated_time = 0
+        async with self._aiolocks['list']:
+            for e in self._list:
+                if e is not entry:  
+                    estimated_time += e.duration
+                else:
+                    break
+        return estimated_time
 
 class PlayerState(Enum):
     PLAYING = 0
     PAUSE = 1
     DOWNLOADING = 2
     WAITING = 3
+
+
+class SourcePlaybackCounter(AudioSource):
+    def __init__(self, source, progress = 0):
+        self._source = source
+        self.progress = progress
+
+    def read(self):
+        self.progress += 1
+        return self._source.read()
+
+    def get_progress(self):
+        return self.progress * 0.02
 
 class Player:
     def __init__(self, guild, volume = 0.15):
@@ -117,6 +154,7 @@ class Player:
         self._player = None
         self._play_task = None
         self._play_safe_task = None
+        self._source = None
         self.volume = volume
         self.state = PlayerState.PAUSE
 
@@ -136,6 +174,7 @@ class Player:
         async with self._aiolocks['playtask']:
             async with self._aiolocks['player']:
                 self.state = PlayerState.WAITING
+                self._current = None
             entry = None
             while not entry:
                 try:
@@ -151,7 +190,8 @@ class Player:
                 self.state = PlayerState.DOWNLOADING
                 self._guild._bot.log.debug('got entry...')
                 self._guild._bot.log.debug(str(entry))
-                self._guild._bot.log.debug(str(cache))                    
+                self._guild._bot.log.debug(str(cache))
+                self._current = entry                   
 
             if play_success_cb:
                 play_success_cb()
@@ -159,7 +199,9 @@ class Player:
             def _playback_finished(error = None):
                 async def _async_playback_finished():
                     async with self._aiolocks['player']:
+                        self._current = None
                         self._player = None
+                        self._source = None
 
                     if error:
                         raise error # pylint: disable=raising-bad-type
@@ -186,19 +228,22 @@ class Player:
 
                 self._guild._bot.log.debug("Creating player with options: {} {} {}".format(boptions, aoptions, entry._uri))
 
-                source = PCMVolumeTransformer(
-                    FFmpegPCMAudio(
-                        entry._uri,
-                        before_options=boptions,
-                        options=aoptions,
-                        stderr=subprocess.PIPE
-                    ),
-                    self.volume
+                source = SourcePlaybackCounter(
+                    PCMVolumeTransformer(
+                        FFmpegPCMAudio(
+                            entry._uri,
+                            before_options=boptions,
+                            options=aoptions,
+                            stderr=subprocess.PIPE
+                        ),
+                        self.volume
+                    )
                 )
 
                 async with self._aiolocks['player']:
                     self._player = self._guild._voice_client
                     self._guild._voice_client.play(source, after=_playback_finished)
+                    self._source = source
                     self.state = PlayerState.PLAYING
         
             self._play_task = create_task(_download_and_play())
@@ -236,6 +281,7 @@ class Player:
                     return
 
                 if self._player:
+                    self.state = PlayerState.PLAYING
                     self._player.resume()
                     play_success_cb()
                     return
@@ -291,4 +337,38 @@ class Player:
     
     async def kill(self):
         async with self._aiolocks['kill']:
-            pass # save data
+            # TODO: destruct
+            pass
+
+    async def progress(self):
+        async with self._aiolocks['player']:
+            if self._source:
+                return self._source.get_progress()
+            else:
+                raise Exception('not playing!')
+
+    async def estimate_time_until(self, position):
+        async with self._aiolocks['playlist']:
+            async with self._aiolocks['player']:
+                if self._current:
+                    estimated_time = self._current.duration
+                if self._source:
+                    estimated_time -= self._source.get_progress()
+            estimated_time += await self._playlist.estimate_time_until(position)
+            return estimated_time
+
+    async def estimate_time_until_entry(self, entry):
+        async with self._aiolocks['playlist']:
+            async with self._aiolocks['player']:
+                if self._current is entry:
+                    return 0
+                if self._current:
+                    estimated_time = self._current.duration
+                if self._source:
+                    estimated_time -= self._source.get_progress()
+            estimated_time += await self._playlist.estimate_time_until_entry(entry)
+            return estimated_time
+
+    async def get_current_entry(self):
+        async with self._aiolocks['player']:
+            return self._current

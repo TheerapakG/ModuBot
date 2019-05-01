@@ -50,6 +50,8 @@ class YtdlDownloader:
             otmpl = self.safe_ytdl.params['outtmpl']
             self.safe_ytdl.params['outtmpl'] = os.path.join(self.download_folder, otmpl)
 
+    def shutdown(self):
+        self.thread_pool.shutdown()
 
     @property
     def ytdl(self):

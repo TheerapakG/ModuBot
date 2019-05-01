@@ -20,8 +20,8 @@ import traceback
 MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '2'
-MODUBOT_VERSIONTYPE = 'b'
-MODUBOT_SUBVERSION = '1'
+MODUBOT_VERSIONTYPE = 'a'
+MODUBOT_SUBVERSION = '17'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -201,7 +201,7 @@ class ModuBot(Bot):
         self.log.debug('loading cogs')
         for modulename, cog in load_cogs:
             self.add_cog(cog)
-            self.crossmodule._cogs[modulename].append(cog.qualified_name)
+            self.crossmodule._cogs[modulename].append(cog)
             self.log.debug('loaded {}'.format(cog.qualified_name))
 
         for modulename, cog in load_cogs:
@@ -282,9 +282,9 @@ class ModuBot(Bot):
                     self.log.debug(str(potential))
                     self.log.debug(str(potential.__func__))
                     if iscoroutinefunction(potential.__func__):
-                        await potential(self)
+                        await potential()
                     elif isfunction(potential.__func__):
-                        potential(self)
+                        potential()
                     else:
                         self.log.debug('uninit is neither funtion nor coroutine function')
                 self.remove_cog(cog)

@@ -50,6 +50,18 @@ class CrossModule:
     def get_object(self, name):
         return self._objs[name]
 
+    async def async_call_object(self, name, *args, **kwargs):
+        '''
+        convenient function to call asynchronous object
+        '''
+        return await self._objs[name](*args, **kwargs)
+
+    def call_object(self, name, *args, **kwargs):
+        '''
+        convenient function to call object
+        '''
+        return self._objs[name](*args, **kwargs)
+
     def assign_dict_object(self, name, index, value):
         '''
         convenient function to assign to a dict object

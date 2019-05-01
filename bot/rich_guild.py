@@ -44,6 +44,7 @@ class RichGuild:
             await self._voice_client.disconnect()
             self.voice_channel = None
             self._voice_client = None
+            self._player.kill()
             self._player = None
 
     async def _connect_channel(self, new_channel):

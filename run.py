@@ -5,6 +5,7 @@ from bot import logger
 from bot.bot import ModuBot
 from bot.config import Config, ConfigDefaults
 import threading
+import time
 from platform import system
 
 if __name__ == "__main__":
@@ -57,7 +58,12 @@ if __name__ == "__main__":
     safe_shutdown = threading.Lock()
     spawned_thread_safe_exit = threading.Lock()
 
+    thread = False
+
     def logouthandler(sig, stackframe=None):
+        global thread
+        if system() == 'Windows':
+            thread = True
         log.debug('\nAcquiring ... (logouthandler/{})'.format(system()))
         safe_shutdown.acquire()
         global shutdown
@@ -68,7 +74,9 @@ if __name__ == "__main__":
             bot.logout()
         log.debug('\nReleasing ... (logouthandler/{})'.format(system()))
         safe_shutdown.release()
+        log.debug('\nAcquiring safe ... (logouthandler/{})'.format(system()))
         spawned_thread_safe_exit.acquire() # This help main thread to not get KeyboardInterrupt while doing work
+        log.debug('\nReleasing safe ... (logouthandler/{})'.format(system()))
         spawned_thread_safe_exit.release() # At least for pywin32
 
     abortKeyboardInterrupt = False
@@ -88,6 +96,7 @@ if __name__ == "__main__":
     
     try:
         bot.run()
+        log.debug('\nAcquiring safe ...')
         spawned_thread_safe_exit.acquire()
         log.debug('\nAcquiring ... (RunExit)')
         safe_shutdown.acquire()
@@ -97,7 +106,6 @@ if __name__ == "__main__":
             bot.logout()
         log.debug('\nReleasing ... (RunExit)')
         safe_shutdown.release()
-        spawned_thread_safe_exit.release()
     except KeyboardInterrupt:
         if not abortKeyboardInterrupt:
             log.debug('\nAcquiring ... (KeyboardInterrupt)')
@@ -118,10 +126,20 @@ if __name__ == "__main__":
         log.debug('\nReleasing ... (RuntimeError)')
         safe_shutdown.release()
 
+    log.debug('\nAcquiring ... (Final)')
+    safe_shutdown.acquire()
+    log.debug('\nReleasing ... (Final)')
+    safe_shutdown.release()
+
+    interrupt = False
+
     try:
-        log.debug('\nAcquiring ... (Final)')
-        safe_shutdown.acquire()
-        log.debug('\nReleasing ... (Final)')
-        safe_shutdown.release()
+        spawned_thread_safe_exit.release()
+        log.debug('\nWaiting ...')
+        while thread and not interrupt:
+            pass
     except KeyboardInterrupt:
-        pass
+        interrupt = True
+    finally:
+        log.debug('\nThis console can now be closed')
+            

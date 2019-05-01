@@ -8,6 +8,7 @@ from ...utils import fixg, ftimedelta
 from .ytdldownloader import YtdlDownloader, get_entry, get_entry_list_from_playlist_url
 from collections import defaultdict
 from ...playback import PlayerState
+from datetime import timedelta
 import time
 import re
 
@@ -42,6 +43,13 @@ class Music(Cog):
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canSummon', 'False')
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canDisconnect', 'False')
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canAddEntry', 'False')
+
+    async def uninit(self):
+        self.bot.log.debug('stopping downloader...')
+        self.downloader.shutdown()
+        self.bot.log.debug('stopping playlists...')
+        for pl in self._playlists.values():
+            await pl.stop()
 
     @command()
     @decorate_cog_command('require_perm_cog_command', 'canSummon', 'True')
@@ -212,10 +220,12 @@ class Music(Cog):
                     # TODO: playlist import entry
                     playlist = await player.get_playlist()
                     entry_list = await get_entry_list_from_playlist_url(song_url, self.downloader, {'channel':ctx.channel, 'author':ctx.author})
+                    entry = None
                     position = None
-                    for entry in entry_list:
-                        position_potent = await playlist.add_entry(entry)
+                    for entry_proc in entry_list:
+                        position_potent = await playlist.add_entry(entry_proc)
                         if not position:
+                            entry = entry_proc
                             position = position_potent
 
                     tnow = time.time()
@@ -240,13 +250,6 @@ class Music(Cog):
 
                 # If it's an entry
                 else:
-                    # youtube:playlist extractor but it's actually an entry
-                    if info.get('extractor', '').startswith('youtube:playlist'):
-                        try:
-                            info = await self.downloader.extract_info(ctx.bot.loop, 'https://www.youtube.com/watch?v=%s' % info.get('url', ''), download=False, process=False)
-                        except Exception as e:
-                            raise e
-
                     # TODO: check permission for entry
 
                     playlist = await player.get_playlist()
@@ -262,9 +265,76 @@ class Music(Cog):
                     reply_text %= (btext, position)
 
                 else:
-                    # Add estimated time
-                    reply_text %= (btext, position)
+                    time_until = await player.estimate_time_until_entry(entry)
+                    reply_text += ' - estimated time until playing: %s'
+                    reply_text %= (btext, position, ftimedelta(time_until))
 
         await ctx.send(reply_text)
+
+    @command()
+    async def np(self, ctx):
+        """
+        Usage:
+            {command_prefix}np
+
+        Displays the current song in chat.
+        """
+        guild = get_guild(ctx.bot, ctx.guild)
+        player = await guild.get_player()
+
+        try:
+            progress = await player.progress()
+            current_entry = await player.get_current_entry()
+        except:
+            await ctx.send('There is no current song.')
+            return
+
+        # TODO: Fix timedelta garbage with util function
+        song_progress = ftimedelta(timedelta(seconds=progress))
+        song_total = ftimedelta(timedelta(seconds=current_entry.duration))
+
+        # TODO: Check if playlist and only show progress
+        prog_str = '`[{progress}/{total}]`'.format(
+            progress=song_progress, total=song_total
+        )
+        prog_bar_str = ''
+
+        # percentage shows how much of the current song has already been played
+        percentage = 0.0
+        if current_entry.duration > 0:
+            percentage = progress / current_entry.duration
+
+        # create the actual bar
+        progress_bar_length = 30
+        for i in range(progress_bar_length):
+            if (percentage < 1 / progress_bar_length * i):
+                prog_bar_str += '□'
+            else:
+                prog_bar_str += '■'
+
+        # TODO: Streaming action text
+        action_text = 'Playing'
+
+        if current_entry.get_metadata().get('author', False):
+            np_text = "Now {action}: **{title}** added by **{author}**\nProgress: {progress_bar} {progress}\n\N{WHITE RIGHT POINTING BACKHAND INDEX} <{url}>".format(
+                action=action_text,
+                title=current_entry.title,
+                author=current_entry.get_metadata()['author'].name,
+                progress_bar=prog_bar_str,
+                progress=prog_str,
+                url=current_entry.url
+            )
+        else:
+
+            np_text = "Now {action}: **{title}**\nProgress: {progress_bar} {progress}\n\N{WHITE RIGHT POINTING BACKHAND INDEX} <{url}>".format(
+                action=action_text,
+                title=current_entry.title,
+                progress_bar=prog_bar_str,
+                progress=prog_str,
+                url=current_entry.url
+            )
+
+        await ctx.send(np_text)
+
 
 cogs = [Music]
