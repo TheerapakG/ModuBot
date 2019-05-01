@@ -1,4 +1,4 @@
-from asyncio import Lock, create_task, CancelledError, run_coroutine_threadsafe
+from asyncio import Lock, create_task, CancelledError, run_coroutine_threadsafe, sleep
 from enum import Enum
 from collections import defaultdict, deque
 from typing import Union, Optional
@@ -132,24 +132,26 @@ class Player:
         async with self._aiolocks['playlist']:
             return self._playlist
 
-    async def _play(self, *, play_fail_cb = None, play_success_cb = None):
+    async def _play(self, *, play_wait_cb = None, play_success_cb = None):
         async with self._aiolocks['playtask']:
             async with self._aiolocks['player']:
-                self.state = PlayerState.DOWNLOADING
-            async with self._aiolocks['playlist']:
+                self.state = PlayerState.WAITING
+            entry = None
+            while not entry:
                 try:
-                    entry, cache = await self._playlist._get_entry()
-                    self._guild._bot.log.debug('got entry...')
-                    self._guild._bot.log.debug(str(entry))
-                    self._guild._bot.log.debug(str(cache))
+                    async with self._aiolocks['playlist']:
+                        entry, cache = await self._playlist._get_entry()
                 except TypeError:
-                    self.state = PlayerState.PAUSE
-                    exc = Exception('Playlist is empty')
-                    if play_fail_cb:
-                        play_fail_cb(exc)
-                    else:
-                        raise exc from None
-                    return
+                    if play_wait_cb:
+                        play_wait_cb()
+                        play_wait_cb = None
+                    await sleep(1)
+
+            async with self._aiolocks['player']:
+                self.state = PlayerState.DOWNLOADING
+                self._guild._bot.log.debug('got entry...')
+                self._guild._bot.log.debug(str(entry))
+                self._guild._bot.log.debug(str(cache))                    
 
             if play_success_cb:
                 play_success_cb()
@@ -209,10 +211,10 @@ class Player:
                 if self.state != PlayerState.PAUSE:
                     await self._play()
 
-    async def _play_safe(self, *callback, play_fail_cb = None, play_success_cb = None):
+    async def _play_safe(self, *callback, play_wait_cb = None, play_success_cb = None):
         async with self._aiolocks['playsafe']:
             if not self._play_safe_task:
-                task = create_task(self._play(play_fail_cb = play_fail_cb, play_success_cb = play_success_cb))
+                task = create_task(self._play(play_wait_cb = play_wait_cb, play_success_cb = play_success_cb))
                 def clear_play_safe_task(future):
                     self._play_safe_task = None
                 task.add_done_callback(clear_play_safe_task)
@@ -222,7 +224,7 @@ class Player:
             else:
                 return
 
-    async def play(self, *, play_fail_cb = None, play_success_cb = None):
+    async def play(self, *, play_fail_cb = None, play_success_cb = None, play_wait_cb = None):
         async with self._aiolocks['play']:
             async with self._aiolocks['player']:
                 if self.state != PlayerState.PAUSE:
@@ -238,7 +240,7 @@ class Player:
                     play_success_cb()
                     return
 
-                await self._play_safe(play_fail_cb = play_fail_cb, play_success_cb = play_success_cb)
+                await self._play_safe(play_wait_cb = play_wait_cb, play_success_cb = play_success_cb)
 
     async def _pause(self):
         async with self._aiolocks['player']:
@@ -258,7 +260,7 @@ class Player:
                     self.state = PlayerState.PAUSE
                     return
 
-                elif self.state == PlayerState.DOWNLOADING:
+                elif self.state == PlayerState.DOWNLOADING or self.state == PlayerState.WAITING:
                     async with self._aiolocks['playtask']:
                         self._play_task.add_done_callback(
                             callback_dummy_future(
@@ -284,6 +286,8 @@ class Player:
                         self._play_task.cancel()
                     return
 
+                elif self.state == PlayerState.WAITING:
+                    raise Exception('nothing to skip!')
     
     async def kill(self):
         async with self._aiolocks['kill']:

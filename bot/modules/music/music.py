@@ -105,7 +105,11 @@ class Music(Cog):
             async def _success():
                 await ctx.send('successfully resumed')
             create_task(_success())
-        await player.play(play_fail_cb = fail, play_success_cb = success)
+        def wait():
+            async def _wait():
+                await ctx.send('successfully resumed, waiting for entries to be added')
+            create_task(_wait())
+        await player.play(play_fail_cb = fail, play_success_cb = success, play_wait_cb = wait)
 
     @command()
     @decorate_cog_command('require_perm_cog_command', 'canControlPlayback', 'True')
