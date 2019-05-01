@@ -232,7 +232,7 @@ class YtdlUrlEntry(Entry):
         retry = True
         while retry:
             try:
-                result = await self._extractor.extract_info(self._extractor._bot.loop, self.url, download=True)
+                result = await self._extractor.extract_info(self.url, download=True)
                 break
             except Exception as e:
                 raise e
@@ -319,3 +319,45 @@ async def get_entry(song_url, extractor, metadata):
     )
 
     return entry
+
+async def get_entry_list_from_playlist_url(playlist_url, extractor, metadata):
+    entry_list = []
+
+    try:
+        info = await extractor.safe_extract_info(playlist_url, download=False)
+    except Exception as e:
+        raise Exception('Could not extract information from {}\n\n{}'.format(playlist_url, e))
+
+    if not info:
+        raise Exception('Could not extract information from %s' % playlist_url)
+
+    # Once again, the generic extractor fucks things up.
+    if info.get('extractor', None) == 'generic':
+        url_field = 'url'
+    else:
+        url_field = 'webpage_url'
+
+    baditems = 0
+    for item in info['entries']:
+        if item:
+            try:
+                entry = YtdlUrlEntry(
+                    item[url_field],
+                    item.get('title', 'Untitled'),
+                    item.get('duration', 0) or 0,
+                    extractor,
+                    metadata,
+                    extractor.ytdl.prepare_filename(info)
+                )
+                entry_list.append(entry)
+            except Exception as e:
+                baditems += 1
+                extractor._bot.log.warning("Could not add item", exc_info=e)
+                extractor._bot.log.debug("Item: {}".format(item), exc_info=True)
+        else:
+            baditems += 1
+
+    if baditems:
+        extractor._bot.log.info("Skipped {} bad entries".format(baditems))
+
+    return entry_list

@@ -5,7 +5,7 @@ from ...rich_guild import get_guild
 from ...decorator_helper import decorate_cog_command
 from ...playback import Entry, Playlist
 from ...utils import fixg, ftimedelta
-from .ytdldownloader import YtdlDownloader, get_entry
+from .ytdldownloader import YtdlDownloader, get_entry, get_entry_list_from_playlist_url
 from collections import defaultdict
 from ...playback import PlayerState
 import time
@@ -175,42 +175,44 @@ class Music(Cog):
 
             # TODO: check extractor
 
-            # If it's playlist
-            if 'entries' in info:
-                # TODO: check permission for playlist
+            async with ctx.typing():
+                # If it's playlist
+                if 'entries' in info:
+                    # TODO: check permission for playlist
 
-                num_songs = sum(1 for _ in info['entries'])
+                    num_songs = sum(1 for _ in info['entries'])
 
-                if info['extractor'].lower() in ['youtube:playlist', 'soundcloud:set', 'bandcamp:album']:
-                    # TODO: play playlist async
-                    pass
+                    # TODO: special playlist download?
 
-                t0 = time.time()
+                    t0 = time.time()
 
-                # My test was 1.2 seconds per song, but we maybe should fudge it a bit, unless we can
-                # monitor it and edit the message with the estimated time, but that's some ADVANCED SHIT
-                # I don't think we can hook into it anyways, so this will have to do.
-                # It would probably be a thread to check a few playlists and get the speed from that
-                # Different playlists might download at different speeds though
-                wait_per_song = 1.2
+                    # My test was 1.2 seconds per song, but we maybe should fudge it a bit, unless we can
+                    # monitor it and edit the message with the estimated time, but that's some ADVANCED SHIT
+                    # I don't think we can hook into it anyways, so this will have to do.
+                    # It would probably be a thread to check a few playlists and get the speed from that
+                    # Different playlists might download at different speeds though
+                    wait_per_song = 1.2
 
-                procmesg = await ctx.send(
-                    'Gathering playlist information for {0} songs{1}'.format(
-                        num_songs,
-                        ', ETA: {0} seconds'.format(
-                            fixg(num_songs * wait_per_song)
-                        ) if num_songs >= 10 else '.'
+                    procmesg = await ctx.send(
+                        'Gathering playlist information for {0} songs{1}'.format(
+                            num_songs,
+                            ', ETA: {0} seconds'.format(
+                                fixg(num_songs * wait_per_song)
+                            ) if num_songs >= 10 else '.'
+                        )
                     )
-                )
-
-                async with ctx.typing():
 
                     # TODO: I can create an event emitter object instead, add event functions, and every play list might be asyncified
                     #       Also have a "verify_entry" hook with the entry as an arg and returns the entry if its ok
 
                     # TODO: playlist import entry
                     playlist = await player.get_playlist()
-                    entry_list, position = await playlist.import_from(song_url, channel=ctx.channel, author=ctx.author)
+                    entry_list = await get_entry_list_from_playlist_url(song_url, self.downloader, {'channel':ctx.channel, 'author':ctx.author})
+                    position = None
+                    for entry in entry_list:
+                        position_potent = await playlist.add_entry(entry)
+                        if not position:
+                            position = position_potent
 
                     tnow = time.time()
                     ttime = tnow - t0
@@ -229,28 +231,35 @@ class Music(Cog):
 
                     await procmesg.delete()
 
-                    reply_text = "Enqueued **%s** songs to be played. Position in queue: %s"
+                    reply_text = "Enqueued **%s** songs to be played. Position of the first entry in queue: %s"
                     btext = str(listlen - drop_count)
 
-            # If it's an entry
-            else:
-                # youtube:playlist extractor but it's actually an entry
-                if info.get('extractor', '').startswith('youtube:playlist'):
-                    try:
-                        info = await self.downloader.extract_info(ctx.bot.loop, 'https://www.youtube.com/watch?v=%s' % info.get('url', ''), download=False, process=False)
-                    except Exception as e:
-                        raise e
+                # If it's an entry
+                else:
+                    # youtube:playlist extractor but it's actually an entry
+                    if info.get('extractor', '').startswith('youtube:playlist'):
+                        try:
+                            info = await self.downloader.extract_info(ctx.bot.loop, 'https://www.youtube.com/watch?v=%s' % info.get('url', ''), download=False, process=False)
+                        except Exception as e:
+                            raise e
 
-                # TODO: check permission for entry
+                    # TODO: check permission for entry
 
-                playlist = await player.get_playlist()
-                entry = await get_entry(song_url, self.downloader, {'channel':ctx.channel, 'author':ctx.author})
-                position = await playlist.add_entry(entry)
+                    playlist = await player.get_playlist()
+                    entry = await get_entry(song_url, self.downloader, {'channel':ctx.channel, 'author':ctx.author})
+                    position = await playlist.add_entry(entry)
 
-                reply_text = "Enqueued `%s` to be played. Position in queue: %s"
-                btext = entry.title
+                    reply_text = "Enqueued `%s` to be played. Position in queue: %s"
+                    btext = entry.title
 
-            # Position msgs
+                # Position msgs
+                if position == 1:
+                    position = 'Up next!'
+                    reply_text %= (btext, position)
+
+                else:
+                    # Add estimated time
+                    reply_text %= (btext, position)
 
         await ctx.send(reply_text)
 

@@ -84,6 +84,7 @@ class Playlist:
                 position = len(self._list) - 1
             if self._precache > position:
                 self._cache_task.insert(position, create_task(self._list[position].prepare_cache()))
+            return position
 
     async def remove_position(self, position):
         async with self._aiolocks['list']:
