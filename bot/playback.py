@@ -254,7 +254,7 @@ class Player:
                     return
 
                 elif self.state == PlayerState.PLAYING:
-                    self._player.stop()
+                    self._player.pause()
                     self.state = PlayerState.PAUSE
                     return
 
@@ -276,8 +276,7 @@ class Player:
                     return
 
                 elif self.state == PlayerState.PLAYING:
-                    self._player.pause()
-                    await self._play_safe()
+                    self._player.stop()
                     return
 
                 elif self.state == PlayerState.DOWNLOADING:
