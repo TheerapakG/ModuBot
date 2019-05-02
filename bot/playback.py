@@ -10,12 +10,15 @@ import traceback
 import subprocess
 
 class Entry:
-    def __init__(self, metadata):
+    def __init__(self, source_url, title, duration, metadata):
+        self.source_url = source_url
+        self.title = title
+        self.duration = duration
         self._aiolocks = defaultdict(Lock)
         self._preparing_cache = False
         self._cached = False
         self._metadata = metadata
-        self._uri = None
+        self._local_url = None
 
     async def is_preparing_cache(self):
         async with self._aiolocks['preparing_cache_set']:
@@ -39,8 +42,8 @@ class Entry:
     def get_metadata(self):
         return self._metadata
 
-    async def set_uri(self, uri):
-        self._uri = uri
+    async def set_local_url(self, local_url):
+        self._local_url = local_url
 
 class Playlist:
     def __init__(self, name, bot, *, precache = 1, persistent = False):
@@ -226,12 +229,12 @@ class Player:
                 boptions = "-nostdin"
                 aoptions = "-vn"
 
-                self._guild._bot.log.debug("Creating player with options: {} {} {}".format(boptions, aoptions, entry._uri))
+                self._guild._bot.log.debug("Creating player with options: {} {} {}".format(boptions, aoptions, entry._local_url))
 
                 source = SourcePlaybackCounter(
                     PCMVolumeTransformer(
                         FFmpegPCMAudio(
-                            entry._uri,
+                            entry._local_url,
                             before_options=boptions,
                             options=aoptions,
                             stderr=subprocess.PIPE

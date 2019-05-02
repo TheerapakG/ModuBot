@@ -151,12 +151,9 @@ class YtdlDownloader:
         return (info, song_url)
 
 class YtdlUrlEntry(Entry):
-    def __init__(self, url, title, duration, extractor, metadata, expected_filename=None):
-        self.url = url
-        self.title = title
-        self.duration = duration
+    def __init__(self, url, title, duration, metadata, extractor, expected_filename=None):
         self._extractor = extractor
-        super().__init__(metadata)
+        super().__init__(url, title, duration, metadata)
         self._download_folder = self._extractor.download_folder
         self._expected_filename = expected_filename
 
@@ -175,7 +172,7 @@ class YtdlUrlEntry(Entry):
 
             if expected_fname_noex in flistdir:
                 try:
-                    rsize = int(await get_header(self._extractor._bot.aiosession, self.url, 'CONTENT-LENGTH'))
+                    rsize = int(await get_header(self._extractor._bot.aiosession, self.source_url, 'CONTENT-LENGTH'))
                 except:
                     rsize = 0
 
@@ -192,7 +189,7 @@ class YtdlUrlEntry(Entry):
                     await self._really_download(hashing=True)
                 else:
                     # print("[Download] Cached:", self.url)
-                    self._uri = lfile
+                    self._local_url = lfile
 
             else:
                 # print("File not found in cache (%s)" % expected_fname_noex)
@@ -208,15 +205,15 @@ class YtdlUrlEntry(Entry):
             # or i have youtube to blame for changing shit again
 
             if expected_fname_base in ldir:
-                self._uri = os.path.join(self._download_folder, expected_fname_base)
-                self._extractor._bot.log.info("Download cached: {}".format(self.url))
+                self._local_url = os.path.join(self._download_folder, expected_fname_base)
+                self._extractor._bot.log.info("Download cached: {}".format(self.source_url))
 
             elif expected_fname_noex in flistdir:
-                self._extractor._bot.log.info("Download cached (different extension): {}".format(self.url))
-                self._uri = os.path.join(self._download_folder, ldir[flistdir.index(expected_fname_noex)])
+                self._extractor._bot.log.info("Download cached (different extension): {}".format(self.source_url))
+                self._local_url = os.path.join(self._download_folder, ldir[flistdir.index(expected_fname_noex)])
                 self._extractor._bot.log.debug("Expected {}, got {}".format(
                     self._expected_filename.rsplit('.', 1)[-1],
-                    self._uri.rsplit('.', 1)[-1]
+                    self._local_url.rsplit('.', 1)[-1]
                 ))
             else:
                 await self._really_download()
@@ -229,24 +226,24 @@ class YtdlUrlEntry(Entry):
                 self._cached = True
 
     async def _really_download(self, *, hashing=False):
-        self._extractor._bot.log.info("Download started: {}".format(self.url))
+        self._extractor._bot.log.info("Download started: {}".format(self.source_url))
 
         retry = True
         while retry:
             try:
-                result = await self._extractor.extract_info(self.url, download=True)
+                result = await self._extractor.extract_info(self.source_url, download=True)
                 break
             except Exception as e:
                 raise e
 
-        self._extractor._bot.log.info("Download complete: {}".format(self.url))
+        self._extractor._bot.log.info("Download complete: {}".format(self.source_url))
 
         if result is None:
             self._extractor._bot.log.critical("YTDL has failed, everyone panic")
             raise Exception("ytdl broke and hell if I know why")
             # What the fuck do I do now?
 
-        self._uri = unhashed_fname = self._extractor.ytdl.prepare_filename(result)
+        self._local_url = unhashed_fname = self._extractor.ytdl.prepare_filename(result)
 
 
         # TODO: check storage limit
@@ -254,14 +251,14 @@ class YtdlUrlEntry(Entry):
 
         if hashing:
             # insert the 8 last characters of the file hash to the file name to ensure uniqueness
-            self._uri = md5sum(unhashed_fname, 8).join('-.').join(unhashed_fname.rsplit('.', 1))
+            self._local_url = md5sum(unhashed_fname, 8).join('-.').join(unhashed_fname.rsplit('.', 1))
 
-            if os.path.isfile(self._uri):
+            if os.path.isfile(self._local_url):
                 # Oh bother it was actually there.
                 os.unlink(unhashed_fname)
             else:
                 # Move the temporary file to it's final location.
-                os.rename(unhashed_fname, self._uri)
+                os.rename(unhashed_fname, self._local_url)
 
 class WrongEntryTypeError(Exception):
     def __init__(self, message, is_playlist, use_url):
@@ -315,8 +312,8 @@ async def get_entry(song_url, extractor, metadata):
         song_url,
         info.get('title', 'Untitled'),
         info.get('duration', 0) or 0,
-        extractor,
         metadata,
+        extractor,
         extractor.ytdl.prepare_filename(info)
     )
 
@@ -347,8 +344,8 @@ async def get_entry_list_from_playlist_url(playlist_url, extractor, metadata):
                     item[url_field],
                     item.get('title', 'Untitled'),
                     item.get('duration', 0) or 0,
-                    extractor,
                     metadata,
+                    extractor,
                     extractor.ytdl.prepare_filename(info)
                 )
                 entry_list.append(entry)

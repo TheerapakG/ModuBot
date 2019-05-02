@@ -217,7 +217,6 @@ class Music(Cog):
                     # TODO: I can create an event emitter object instead, add event functions, and every play list might be asyncified
                     #       Also have a "verify_entry" hook with the entry as an arg and returns the entry if its ok
 
-                    # TODO: playlist import entry
                     playlist = await player.get_playlist()
                     entry_list = await get_entry_list_from_playlist_url(song_url, self.downloader, {'channel':ctx.channel, 'author':ctx.author})
                     entry = None
