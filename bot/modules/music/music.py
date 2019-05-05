@@ -40,9 +40,15 @@ class Music(Cog):
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canDisconnect', 'True')
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canControlPlayback', 'True')
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canAddEntry', 'True')
+        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'usableYtdlExtractor', None)
+        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'allowPlaylists', 'True')
+        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'maxPlaylistsLength', None)
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canSummon', 'False')
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canDisconnect', 'False')
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canAddEntry', 'False')
+        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'usableYtdlExtractor', dict())
+        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'allowPlaylists', 'True')
+        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'maxPlaylistsLength', 1)
 
     async def uninit(self):
         self.bot.log.debug('stopping downloader...')
@@ -149,7 +155,7 @@ class Music(Cog):
 
     @command()
     @decorate_cog_command('require_perm_cog_command', 'canAddEntry', 'True')
-    async def play(self, ctx, song_url: str):
+    async def play(self, ctx, *, song_url: str):
         """
         Usage:
             {command_prefix}play song_link
@@ -174,27 +180,59 @@ class Music(Cog):
         groups = matches.groups() if matches is not None else []
         song_url = "https://www.youtube.com/playlist?" + groups[0] if len(groups) > 0 else song_url
 
-        # TODO: check perm
+        # Try to determine entry type, if _type is playlist then there should be entries
+        info, song_url = await self.downloader.process_url_to_info(
+            song_url,
+            on_search_error = lambda e: create_task(
+                ctx.send("```\n%s\n```" % e)
+            )
+        )
+
+        if not info:
+            await ctx.send("That video cannot be played. Try using the stream command.")
+            return
+
+        extractor_permission =  await ctx.bot.crossmodule.async_call_object(
+            'have_perm', 
+            ctx.author, 
+            'usableYtdlExtractor', 
+            info.get('extractor', ''),
+            lambda permvalue, requirevalue: requirevalue in permvalue if permvalue is not None else True
+        )
+
+        if not extractor_permission:
+            await ctx.send("You do not have permission to play media from this service.")
+            return
+
         # This lock prevent spamming play command to add entries that exceeds time limit/ maximum song limit
         async with self._aiolocks['play_{}'.format(ctx.author.id)]:
-            # Try to determine entry type, if _type is playlist then there should be entries
-            info, song_url = await self.downloader.process_url_to_info(
-                song_url,
-                on_search_error = lambda e: create_task(
-                    ctx.send("```\n%s\n```" % e)
-                )
-            )
-
-            # TODO: check extractor
-
             async with ctx.typing():
                 # If it's playlist
                 if 'entries' in info:
-                    # TODO: check permission for playlist
-
                     num_songs = sum(1 for _ in info['entries'])
 
-                    # TODO: special playlist download?
+                    allow_playlists_permission =  await ctx.bot.crossmodule.async_call_object(
+                        'have_perm', 
+                        ctx.author, 
+                        'allowPlaylists', 
+                        'True',
+                    )
+
+                    if not allow_playlists_permission:
+                        await ctx.send("You are not allowed to request playlists")
+
+                    max_playlists_length_permission =  await ctx.bot.crossmodule.async_call_object(
+                        'have_perm', 
+                        ctx.author, 
+                        'maxPlaylistsLength', 
+                        num_songs,
+                        lambda permvalue, requirevalue: requirevalue <= permvalue if permvalue else True
+                    )
+
+                    if not max_playlists_length_permission:
+                        await ctx.send("Playlist has too many entries ({1})").format(num_songs)
+
+                    # TODO: check songs count
 
                     t0 = time.time()
 

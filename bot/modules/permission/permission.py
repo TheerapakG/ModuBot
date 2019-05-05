@@ -168,7 +168,7 @@ class Permission(Cog):
         """
         await ctx.send(str(self.perm_info[ctx.guild.id]))
 
-    async def have_perm(self, member, perm, value, comparer):
+    async def have_perm(self, member, perm, value, comparer = lambda permvalue, requirevalue: permvalue == requirevalue):
         roles = member.roles
 
         skip_owner_check = False
