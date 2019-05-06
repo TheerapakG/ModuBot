@@ -5,7 +5,7 @@ from ...rich_guild import get_guild
 from ...decorator_helper import decorate_cog_command
 from ...playback import Entry, Playlist
 from ...utils import fixg, ftimedelta
-from .ytdldownloader import YtdlDownloader, get_entry, get_entry_list_from_playlist_url
+from .ytdldownloader import YtdlDownloader, get_entry, get_stream_entry, get_entry_list_from_playlist_url
 from collections import defaultdict
 from ...playback import PlayerState
 from datetime import timedelta
@@ -40,6 +40,7 @@ class Music(Cog):
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canDisconnect', 'True')
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canControlPlayback', 'True')
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canAddEntry', 'True')
+        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canAddStream', 'True')
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'usableYtdlExtractor', None)
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'allowPlaylists', 'True')
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'maxPlaylistsLength', None)
@@ -47,6 +48,7 @@ class Music(Cog):
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canSummon', 'False')
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canDisconnect', 'False')
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canAddEntry', 'False')
+        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canAddStream', 'False')
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'usableYtdlExtractor', dict())
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'allowPlaylists', 'True')
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'maxPlaylistsLength', 1)
@@ -248,7 +250,7 @@ class Music(Cog):
                     )
 
                     if not max_song_count_permission:
-                        await ctx.send("cannot queue because song count will exceed ({1})").format(num_songs)
+                        await ctx.send("cannot queue because song count will exceed ({1})").format(total_songs)
 
                     t0 = time.time()
 
@@ -315,7 +317,7 @@ class Music(Cog):
                     )
 
                     if not max_song_count_permission:
-                        await ctx.send("cannot queue because song count will exceed ({1})").format(num_songs)
+                        await ctx.send("cannot queue because song count will exceed ({1})").format(total_songs)
 
                     entry = await get_entry(song_url, ctx.author.id, self.downloader, {'channel':ctx.channel})
                     # TODO: check perm for length of each entry
@@ -333,6 +335,59 @@ class Music(Cog):
                     time_until = await player.estimate_time_until_entry(entry)
                     reply_text += ' - estimated time until playing: %s'
                     reply_text %= (btext, position, ftimedelta(time_until))
+
+        await ctx.send(reply_text)
+
+    @command()
+    @decorate_cog_command('require_perm_cog_command', 'canAddEntry', 'True')
+    @decorate_cog_command('require_perm_cog_command', 'canAddStream', 'True')
+    async def stream(self, ctx, song_url):
+        """
+        Usage:
+            {command_prefix}stream song_link
+
+        Enqueue a media stream.
+        This could mean an actual stream like Twitch or shoutcast, or simply streaming
+        media without predownloading it.  Note: FFmpeg is notoriously bad at handling
+        streams, especially on poor connections.  You have been warned.
+        """
+        guild = get_guild(ctx.bot, ctx.guild)
+        player = await guild.get_player()
+
+        song_url = song_url.strip('<>')
+
+        playlist = await player.get_playlist()
+        async with ctx.typing():
+            async with self._aiolocks['play_{}'.format(ctx.author.id)]:
+                num_songs_playlist = await playlist.num_entry_of(ctx.author)
+                total_songs = 1 + num_songs_playlist
+
+                max_song_count_permission =  await ctx.bot.crossmodule.async_call_object(
+                    'have_perm', 
+                    ctx.author, 
+                    'maxSongCount', 
+                    total_songs,
+                    lambda permvalue, requirevalue: requirevalue <= permvalue if permvalue else True
+                )
+
+                if not max_song_count_permission:
+                    await ctx.send("cannot queue because song count will exceed ({1})").format(total_songs)
+
+                entry = await get_stream_entry(song_url, ctx.author.id, self.downloader, {'channel':ctx.channel})
+                position = await playlist.add_entry(entry)
+
+            reply_text = "Enqueued `%s` to be played. Position in queue: %s"
+            btext = entry.title
+
+            # Position msgs
+            if position == 1:
+                position = 'Up next!'
+                reply_text %= (btext, position)
+
+            else:
+                time_until = await player.estimate_time_until_entry(entry)
+                reply_text += ' - estimated time until playing: %s'
+                reply_text %= (btext, position, ftimedelta(time_until))
 
         await ctx.send(reply_text)
 

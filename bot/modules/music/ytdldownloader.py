@@ -5,6 +5,9 @@ import youtube_dl
 from ...playback import Entry
 from ...utils import get_header, md5sum
 
+from urllib.error import URLError
+from youtube_dl.utils import DownloadError, UnsupportedError
+
 from concurrent.futures import ThreadPoolExecutor
 
 ytdl_format_options = {
@@ -260,6 +263,41 @@ class YtdlUrlEntry(Entry):
                 # Move the temporary file to it's final location.
                 os.rename(unhashed_fname, self._local_url)
 
+class YtdlStreamEntry(Entry):
+    def __init__(self, source_url, title, queuer_id, metadata, extractor, destination = None):
+        self._extractor = extractor
+        super().__init__(source_url, title, 0, queuer_id, metadata)
+        self._destination = destination
+
+    async def prepare_cache(self):
+        async with self._aiolocks['preparing_cache_set']:
+            if self._preparing_cache:
+                return
+            self._preparing_cache = True
+
+        await self._really_download()
+
+        async with self._aiolocks['preparing_cache_set']:
+            async with self._aiolocks['cached_set']:
+                self._preparing_cache = False
+                self._cached = True
+
+    async def _really_download(self, *, fallback=False):
+        url = self._destination if fallback else self.source_url
+
+        try:
+            result = await self._extractor.extract_info(url, download=False)
+        except Exception as e:
+            if not fallback and self._destination:
+                return await self._really_download(fallback=True)
+
+            raise e
+        else:
+            self._local_url = result['url']
+            # I might need some sort of events or hooks or shit
+            # for when ffmpeg inevitebly fucks up and i have to restart
+            # although maybe that should be at a slightly lower level
+
 class WrongEntryTypeError(Exception):
     def __init__(self, message, is_playlist, use_url):
         super().__init__(message)
@@ -316,6 +354,54 @@ async def get_entry(song_url, queuer_id, extractor, metadata):
         metadata,
         extractor,
         extractor.ytdl.prepare_filename(info)
+    )
+
+    return entry
+
+async def get_stream_entry(song_url, queuer_id, extractor, metadata):
+    info = {'title': song_url, 'extractor': None}
+
+    try:
+        info = await extractor.extract_info(song_url, download=False)
+
+    except DownloadError as e:
+        if e.exc_info[0] == UnsupportedError:  # ytdl doesn't like it but its probably a stream
+            extractor._bot.log.debug("Assuming content is a direct stream")
+
+        elif e.exc_info[0] == URLError:
+            if os.path.exists(os.path.abspath(song_url)):
+                raise Exception("This is not a stream, this is a file path.")
+
+            else:  # it might be a file path that just doesn't exist
+                raise Exception("Invalid input: {0.exc_info[0]}: {0.exc_info[1].reason}".format(e))
+
+        else:
+            # traceback.print_exc()
+            raise Exception("Unknown error: {}".format(e))
+
+    except Exception as e:
+        extractor._bot.log.error('Could not extract information from {} ({}), falling back to direct'.format(song_url, e), exc_info=True)
+
+    if info.get('is_live') is None and info.get('extractor', None) is not 'generic':  # wew hacky
+        raise Exception("This is not a stream.")
+
+    dest_url = song_url
+    if info.get('extractor'):
+        dest_url = info.get('url')
+
+    if info.get('extractor', None) == 'twitch:stream':  # may need to add other twitch types
+        title = info.get('description')
+    else:
+        title = info.get('title', 'Untitled')
+
+    # TODO: A bit more validation, "~stream some_url" should not just say :ok_hand:
+    entry = YtdlStreamEntry(
+        song_url,
+        title,
+        queuer_id,
+        metadata,
+        extractor,
+        destination = dest_url
     )
 
     return entry
