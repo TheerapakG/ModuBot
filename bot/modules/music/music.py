@@ -43,12 +43,14 @@ class Music(Cog):
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'usableYtdlExtractor', None)
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'allowPlaylists', 'True')
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'maxPlaylistsLength', None)
+        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'maxSongCount', None)
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canSummon', 'False')
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canDisconnect', 'False')
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canAddEntry', 'False')
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'usableYtdlExtractor', dict())
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'allowPlaylists', 'True')
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'maxPlaylistsLength', 1)
+        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'maxSongCount', 1)
 
     async def uninit(self):
         self.bot.log.debug('stopping downloader...')
@@ -232,7 +234,21 @@ class Music(Cog):
                     if not max_playlists_length_permission:
                         await ctx.send("Playlist has too many entries ({1})").format(num_songs)
 
-                    # TODO: check songs count
+                    playlist = await player.get_playlist()
+
+                    num_songs_playlist = await playlist.num_entry_of(ctx.author)
+                    total_songs = num_songs + num_songs_playlist
+
+                    max_song_count_permission =  await ctx.bot.crossmodule.async_call_object(
+                        'have_perm', 
+                        ctx.author, 
+                        'maxSongCount', 
+                        total_songs,
+                        lambda permvalue, requirevalue: requirevalue <= permvalue if permvalue else True
+                    )
+
+                    if not max_song_count_permission:
+                        await ctx.send("cannot queue because song count will exceed ({1})").format(num_songs)
 
                     t0 = time.time()
 
@@ -255,11 +271,11 @@ class Music(Cog):
                     # TODO: I can create an event emitter object instead, add event functions, and every play list might be asyncified
                     #       Also have a "verify_entry" hook with the entry as an arg and returns the entry if its ok
 
-                    playlist = await player.get_playlist()
-                    entry_list = await get_entry_list_from_playlist_url(song_url, self.downloader, {'channel':ctx.channel, 'author':ctx.author})
+                    entry_list = await get_entry_list_from_playlist_url(song_url, ctx.author.id, self.downloader, {'channel':ctx.channel})
                     entry = None
                     position = None
                     for entry_proc in entry_list:
+                        # TODO: check perm for length of each entry
                         position_potent = await playlist.add_entry(entry_proc)
                         if not position:
                             entry = entry_proc
@@ -269,8 +285,6 @@ class Music(Cog):
                     ttime = tnow - t0
                     listlen = len(entry_list)
                     drop_count = 0
-
-                    # TODO: check perm for length of each entry
 
                     ctx.bot.log.info("Processed {} songs in {} seconds at {:.2f}s/song, {:+.2g}/song from expected ({}s)".format(
                         listlen,
@@ -287,10 +301,24 @@ class Music(Cog):
 
                 # If it's an entry
                 else:
-                    # TODO: check permission for entry
-
                     playlist = await player.get_playlist()
-                    entry = await get_entry(song_url, self.downloader, {'channel':ctx.channel, 'author':ctx.author})
+
+                    num_songs_playlist = await playlist.num_entry_of(ctx.author)
+                    total_songs = 1 + num_songs_playlist
+
+                    max_song_count_permission =  await ctx.bot.crossmodule.async_call_object(
+                        'have_perm', 
+                        ctx.author, 
+                        'maxSongCount', 
+                        total_songs,
+                        lambda permvalue, requirevalue: requirevalue <= permvalue if permvalue else True
+                    )
+
+                    if not max_song_count_permission:
+                        await ctx.send("cannot queue because song count will exceed ({1})").format(num_songs)
+
+                    entry = await get_entry(song_url, ctx.author.id, self.downloader, {'channel':ctx.channel})
+                    # TODO: check perm for length of each entry
                     position = await playlist.add_entry(entry)
 
                     reply_text = "Enqueued `%s` to be played. Position in queue: %s"
@@ -352,23 +380,23 @@ class Music(Cog):
         # TODO: Streaming action text
         action_text = 'Playing'
 
-        if current_entry.get_metadata().get('author', False):
+        if current_entry.queuer_id:
             np_text = "Now {action}: **{title}** added by **{author}**\nProgress: {progress_bar} {progress}\n\N{WHITE RIGHT POINTING BACKHAND INDEX} <{url}>".format(
-                action=action_text,
-                title=current_entry.title,
-                author=current_entry.get_metadata()['author'].name,
-                progress_bar=prog_bar_str,
-                progress=prog_str,
-                url=current_entry.url
+                action = action_text,
+                title = current_entry.title,
+                author = await ctx.guild.get_member(current_entry.queuer_id),
+                progress_bar = prog_bar_str,
+                progress = prog_str,
+                url = current_entry.url
             )
         else:
 
             np_text = "Now {action}: **{title}**\nProgress: {progress_bar} {progress}\n\N{WHITE RIGHT POINTING BACKHAND INDEX} <{url}>".format(
-                action=action_text,
-                title=current_entry.title,
-                progress_bar=prog_bar_str,
-                progress=prog_str,
-                url=current_entry.url
+                action = action_text,
+                title = current_entry.title,
+                progress_bar = prog_bar_str,
+                progress = prog_str,
+                url = current_entry.url
             )
 
         await ctx.send(np_text)

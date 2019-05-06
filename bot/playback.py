@@ -10,10 +10,11 @@ import traceback
 import subprocess
 
 class Entry:
-    def __init__(self, source_url, title, duration, metadata):
+    def __init__(self, source_url, title, duration, queuer_id, metadata):
         self.source_url = source_url
         self.title = title
         self.duration = duration
+        self.queuer_id = queuer_id
         self._aiolocks = defaultdict(Lock)
         self._preparing_cache = False
         self._cached = False
@@ -128,6 +129,10 @@ class Playlist:
                 else:
                     break
         return estimated_time
+
+    async def num_entry_of(self, user_id):
+        async with self._aiolocks['list']:
+            return sum(1 for e in self._list if e.queuer_id == user_id)
 
 class PlayerState(Enum):
     PLAYING = 0

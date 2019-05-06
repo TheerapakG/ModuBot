@@ -151,9 +151,9 @@ class YtdlDownloader:
         return (info, song_url)
 
 class YtdlUrlEntry(Entry):
-    def __init__(self, url, title, duration, metadata, extractor, expected_filename=None):
+    def __init__(self, url, title, duration, queuer_id, metadata, extractor, expected_filename=None):
         self._extractor = extractor
-        super().__init__(url, title, duration, metadata)
+        super().__init__(url, title, duration, queuer_id, metadata)
         self._download_folder = self._extractor.download_folder
         self._expected_filename = expected_filename
 
@@ -266,7 +266,7 @@ class WrongEntryTypeError(Exception):
         self.is_playlist = is_playlist
         self.use_url = use_url
 
-async def get_entry(song_url, extractor, metadata):
+async def get_entry(song_url, queuer_id, extractor, metadata):
     try:
         info = await extractor.extract_info(extractor._bot.loop, song_url, download=False)
     except Exception as e:
@@ -312,6 +312,7 @@ async def get_entry(song_url, extractor, metadata):
         song_url,
         info.get('title', 'Untitled'),
         info.get('duration', 0) or 0,
+        queuer_id,
         metadata,
         extractor,
         extractor.ytdl.prepare_filename(info)
@@ -319,7 +320,7 @@ async def get_entry(song_url, extractor, metadata):
 
     return entry
 
-async def get_entry_list_from_playlist_url(playlist_url, extractor, metadata):
+async def get_entry_list_from_playlist_url(playlist_url, queuer_id, extractor, metadata):
     entry_list = []
 
     try:
@@ -344,6 +345,7 @@ async def get_entry_list_from_playlist_url(playlist_url, extractor, metadata):
                     item[url_field],
                     item.get('title', 'Untitled'),
                     item.get('duration', 0) or 0,
+                    queuer_id,
                     metadata,
                     extractor,
                     extractor.ytdl.prepare_filename(info)
