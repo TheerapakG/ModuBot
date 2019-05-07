@@ -5,7 +5,7 @@ from ...rich_guild import get_guild
 from ...decorator_helper import decorate_cog_command
 from ...playback import Entry, Playlist
 from ...utils import fixg, ftimedelta
-from .ytdldownloader import YtdlDownloader, get_entry, get_stream_entry, get_entry_list_from_playlist_url
+from .ytdldownloader import YtdlDownloader, YtdlStreamEntry, get_entry, get_stream_entry, get_entry_list_from_playlist_url
 from collections import defaultdict
 from ...playback import PlayerState
 from datetime import timedelta
@@ -13,16 +13,6 @@ import time
 import re
 
 deps = ['permission']
-
-class YtdlEntry(Entry):
-    async def prepare_cache(self):
-        async with self._aiolocks['preparing_cache_set']:
-            self._preparing_cache = True
-
-        async with self._aiolocks['preparing_cache_set']:
-            async with self._aiolocks['cached_set']:
-                self._preparing_cache = False
-                self._cached = True
 
 class Music(Cog):
     def __init__(self):
@@ -413,8 +403,8 @@ class Music(Cog):
         song_progress = ftimedelta(timedelta(seconds=progress))
         song_total = ftimedelta(timedelta(seconds=current_entry.duration))
 
-        # TODO: Check if playlist and only show progress
-        prog_str = '`[{progress}/{total}]`'.format(
+        streaming = isinstance(current_entry, YtdlStreamEntry)
+        prog_str = ('`[{progress}]`' if streaming else '`[{progress}/{total}]`').format(
             progress=song_progress, total=song_total
         )
         prog_bar_str = ''
@@ -433,16 +423,16 @@ class Music(Cog):
                 prog_bar_str += '■'
 
         # TODO: Streaming action text
-        action_text = 'Playing'
+        action_text = 'Streaming' if streaming else 'Playing'
 
         if current_entry.queuer_id:
             np_text = "Now {action}: **{title}** added by **{author}**\nProgress: {progress_bar} {progress}\n\N{WHITE RIGHT POINTING BACKHAND INDEX} <{url}>".format(
                 action = action_text,
                 title = current_entry.title,
-                author = await ctx.guild.get_member(current_entry.queuer_id),
+                author = ctx.guild.get_member(current_entry.queuer_id),
                 progress_bar = prog_bar_str,
                 progress = prog_str,
-                url = current_entry.url
+                url = current_entry.source_url
             )
         else:
 
@@ -451,7 +441,7 @@ class Music(Cog):
                 title = current_entry.title,
                 progress_bar = prog_bar_str,
                 progress = prog_str,
-                url = current_entry.url
+                url = current_entry.source_url
             )
 
         await ctx.send(np_text)

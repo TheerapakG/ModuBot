@@ -306,7 +306,7 @@ class WrongEntryTypeError(Exception):
 
 async def get_entry(song_url, queuer_id, extractor, metadata):
     try:
-        info = await extractor.extract_info(extractor._bot.loop, song_url, download=False)
+        info = await extractor.extract_info(song_url, download=False)
     except Exception as e:
         raise Exception('Could not extract information from {}\n\n{}'.format(song_url, e))
 

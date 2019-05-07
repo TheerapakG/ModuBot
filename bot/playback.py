@@ -6,6 +6,7 @@ from discord import FFmpegPCMAudio, PCMVolumeTransformer, AudioSource
 from functools import partial
 from .utils import callback_dummy_future
 from itertools import islice
+from datetime import timedelta
 import traceback
 import subprocess
 
@@ -98,7 +99,7 @@ class Playlist:
                 position = len(self._list) - 1
             if self._precache > position:
                 self._cache_task.insert(position, create_task(self._list[position].prepare_cache()))
-            return position
+            return position + 1
 
     async def remove_position(self, position):
         async with self._aiolocks['list']:
@@ -118,7 +119,7 @@ class Playlist:
     async def estimate_time_until(self, position):
         async with self._aiolocks['list']:
             estimated_time = sum(e.duration for e in islice(self._list, position - 1))
-        return estimated_time
+        return timedelta(seconds=estimated_time)
 
     async def estimate_time_until_entry(self, entry):
         estimated_time = 0
@@ -128,7 +129,7 @@ class Playlist:
                     estimated_time += e.duration
                 else:
                     break
-        return estimated_time
+        return timedelta(seconds=estimated_time)
 
     async def num_entry_of(self, user_id):
         async with self._aiolocks['list']:
@@ -374,8 +375,13 @@ class Player:
                     return 0
                 if self._current:
                     estimated_time = self._current.duration
-                if self._source:
-                    estimated_time -= self._source.get_progress()
+                    if self._source:
+                        estimated_time -= self._source.get_progress()
+                else:
+                    estimated_time = 0
+
+            estimated_time = timedelta(seconds=estimated_time)
+                
             estimated_time += await self._playlist.estimate_time_until_entry(entry)
             return estimated_time
 
