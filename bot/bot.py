@@ -6,6 +6,7 @@ from importlib import import_module, reload
 from collections import namedtuple
 from inspect import iscoroutinefunction, isfunction
 from functools import partial, wraps
+from contextlib import suppress
 import pkgutil
 import sys
 
@@ -20,8 +21,8 @@ import traceback
 MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '2'
-MODUBOT_VERSIONTYPE = 'a'
-MODUBOT_SUBVERSION = '23'
+MODUBOT_VERSIONTYPE = 'b'
+MODUBOT_SUBVERSION = '2'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -368,6 +369,10 @@ class ModuBot(Bot):
         self.log.info('canceling incomplete tasks...')
         gathered = asyncio.gather(*asyncio.Task.all_tasks(self.loop), loop=self.loop)
         gathered.cancel()
+        async def await_gathered():
+            with suppress(asyncio.CancelledError):
+                await gathered
+        self.loop.run_until_complete(await_gathered())
         self.log.info('closing loop...')
         self.loop.close()
         self.log.info('finished!')
@@ -388,6 +393,10 @@ class ModuBot(Bot):
         self.log.info('canceling incomplete tasks...')
         gathered = asyncio.gather(*asyncio.Task.all_tasks(self.loop), loop=self.loop)
         gathered.cancel()
+        async def await_gathered():
+            with suppress(asyncio.CancelledError):
+                await gathered
+        self.loop.run_until_complete(await_gathered())
         self.log.info('closing loop...')
         self.loop.close()
         self.log.info('finished!')
