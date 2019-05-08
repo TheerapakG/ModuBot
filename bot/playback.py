@@ -1,4 +1,4 @@
-from asyncio import Lock, create_task, CancelledError, run_coroutine_threadsafe, sleep
+from asyncio import Lock, create_task, CancelledError, run_coroutine_threadsafe, sleep, Future
 from enum import Enum
 from collections import defaultdict, deque
 from typing import Union, Optional
@@ -193,19 +193,18 @@ class Player:
                 try:
                     async with self._aiolocks['playlist']:
                         entry, cache = await self._playlist._get_entry()
+                        async with self._aiolocks['player']:
+                            self.state = PlayerState.DOWNLOADING
+                            self._guild._bot.log.debug('got entry...')
+                            self._guild._bot.log.debug(str(entry))
+                            self._guild._bot.log.debug(str(cache))
+                            self._current = entry
                 except (TypeError, AttributeError):
                     if play_wait_cb:
                         play_wait_cb()
                         play_wait_cb = None
                         play_success_cb = None
-                    await sleep(1)
-
-            async with self._aiolocks['player']:
-                self.state = PlayerState.DOWNLOADING
-                self._guild._bot.log.debug('got entry...')
-                self._guild._bot.log.debug(str(entry))
-                self._guild._bot.log.debug(str(cache))
-                self._current = entry                   
+                    await sleep(1)                 
 
             if play_success_cb:
                 play_success_cb()
@@ -363,17 +362,45 @@ class Player:
 
     async def estimate_time_until(self, position):
         async with self._aiolocks['playlist']:
+            future = None
             async with self._aiolocks['player']:
+                if self.state == PlayerState.DOWNLOADING:
+                    self._guild._bot.log.debug('scheduling estimate time after current entry is playing')
+                    future = Future()
+                    async def call_after_downloaded():
+                        future.set_result(await self.estimate_time_until(position))
+                    self._play_task.add_done_callback(
+                        callback_dummy_future(
+                            partial(create_task, call_after_downloaded())
+                        )
+                    )
                 if self._current:
                     estimated_time = self._current.duration
                 if self._source:
                     estimated_time -= self._source.get_progress()
+
+            if future:
+                estimated_time = await future
+
+            estimated_time = timedelta(seconds=estimated_time)
+
             estimated_time += await self._playlist.estimate_time_until(position)
             return estimated_time
 
     async def estimate_time_until_entry(self, entry):
         async with self._aiolocks['playlist']:
+            future = None
             async with self._aiolocks['player']:
+                if self.state == PlayerState.DOWNLOADING:
+                    self._guild._bot.log.debug('scheduling estimate time after current entry is playing')
+                    future = Future()
+                    async def call_after_downloaded():
+                        future.set_result(await self.estimate_time_until_entry(entry))
+                    self._play_task.add_done_callback(
+                        callback_dummy_future(
+                            partial(create_task, call_after_downloaded())
+                        )
+                    )
                 if self._current is entry:
                     return 0
                 if self._current:
@@ -382,6 +409,9 @@ class Player:
                         estimated_time -= self._source.get_progress()
                 else:
                     estimated_time = 0
+
+            if future:
+                estimated_time = await future
 
             estimated_time = timedelta(seconds=estimated_time)
                 

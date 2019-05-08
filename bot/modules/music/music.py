@@ -321,12 +321,12 @@ class Music(Cog):
                     btext = entry.title
 
                 # Position msgs
-                if position == 1:
+                time_until = await player.estimate_time_until_entry(entry)
+                if time_until == timedelta(seconds=0):
                     position = 'Up next!'
                     reply_text %= (btext, position)
 
-                else:
-                    time_until = await player.estimate_time_until_entry(entry)
+                else:                    
                     reply_text += ' - estimated time until playing: %s'
                     reply_text %= (btext, position, ftimedelta(time_until))
 
@@ -374,12 +374,12 @@ class Music(Cog):
             btext = entry.title
 
             # Position msgs
-            if position == 1:
+            time_until = await player.estimate_time_until_entry(entry)
+            if time_until == timedelta(seconds=0):
                 position = 'Up next!'
                 reply_text %= (btext, position)
 
-            else:
-                time_until = await player.estimate_time_until_entry(entry)
+            else:                    
                 reply_text += ' - estimated time until playing: %s'
                 reply_text %= (btext, position, ftimedelta(time_until))
 
