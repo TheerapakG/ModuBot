@@ -169,6 +169,8 @@ class Player:
         self.volume = volume
         self.state = PlayerState.PAUSE
 
+        create_task(self.play())
+
     async def status(self):
         async with self._aiolocks['player']:
             return self.state
@@ -191,10 +193,11 @@ class Player:
                 try:
                     async with self._aiolocks['playlist']:
                         entry, cache = await self._playlist._get_entry()
-                except TypeError:
+                except (TypeError, AttributeError):
                     if play_wait_cb:
                         play_wait_cb()
                         play_wait_cb = None
+                        play_success_cb = None
                     await sleep(1)
 
             async with self._aiolocks['player']:

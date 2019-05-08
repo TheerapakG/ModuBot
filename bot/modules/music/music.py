@@ -70,13 +70,17 @@ class Music(Cog):
 
         else:
             guild = get_guild(ctx.bot, ctx.guild)
-            await guild.set_connected_voice_channel(voicechannel)
-            playlist = await guild.get_playlist()
-            if not playlist:
-                playlistname = 'default-{}'.format(guild.id)
-                if playlistname not in self._playlists:
-                    self._playlists[playlistname] = Playlist(ctx.bot, playlistname)
-                await guild.set_playlist(self._playlists[playlistname])
+            async with self._aiolocks['summon']:
+                try:
+                    before_player = await guild.get_player()
+                except:
+                    before_player = None
+                await guild.set_connected_voice_channel(voicechannel)
+                if not before_player:
+                    playlistname = 'default-{}'.format(guild.id)
+                    if playlistname not in self._playlists:
+                        self._playlists[playlistname] = Playlist(ctx.bot, playlistname)
+                    await guild.set_playlist(self._playlists[playlistname])
             await ctx.send('successfully summoned')
 
     @command()
