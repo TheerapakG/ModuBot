@@ -1,7 +1,9 @@
 import json
+import re
 import os
 import aiohttp
 from hashlib import md5
+from datetime import timedelta
 
 def isiterable(x):
     try:
@@ -53,3 +55,12 @@ def md5sum(filename, limit=0):
         for chunk in iter(lambda: f.read(8192), b""):
             fhash.update(chunk)
     return fhash.hexdigest()[-limit:]
+
+regex_parse_duration = re.compile(r'^((?P<days>[\.\d]+?)d)?((?P<hours>[\.\d]+?)h)?((?P<minutes>[\.\d]+?)m)?((?P<seconds>[\.\d]+?)s)?$')
+
+def parse_duration(durationstr):
+    duration_parts = regex_parse_duration.match(durationstr)
+    assert duration_parts is not None
+    time_params = {name: float(param) for name, param in duration_parts.groupdict().items() if param}
+    duration = timedelta(**time_params)
+    return duration

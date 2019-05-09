@@ -3,13 +3,19 @@ from discord import Member, Role
 from collections import defaultdict
 from functools import wraps, partial, update_wrapper
 from ...utils import save_data, load_data
+from ...typing_conv import check_typing
+from ast import literal_eval
+
+permtype = {
+    'canModifyPermission': bool
+}
 
 permissive = {
-    'canModifyPermission': 'True'
+    'canModifyPermission': True
 }
 
 default = {
-    'canModifyPermission': 'False'
+    'canModifyPermission': False
 }
 
 class Permission(Cog):
@@ -39,6 +45,7 @@ class Permission(Cog):
         self.perm_info = dict()
         self.perm_member = dict()
         self.perm_role = dict()
+        self.perm_type = dict()
         self.perm_permissive = dict()
         self.perm_default = dict()
 
@@ -47,6 +54,7 @@ class Permission(Cog):
         self.perm_info = config
         bot.crossmodule.register_object('have_perm', self.have_perm)
         bot.crossmodule.register_decorator(update_wrapper(partial(self.require_perm_cog_command, coginst = self), self.require_perm_cog_command))
+        bot.crossmodule.register_object('PermType', permtype.copy())
         bot.crossmodule.register_object('PermissivePerm', permissive.copy())
         bot.crossmodule.register_object('DefaultPerm', default.copy())
 
@@ -59,6 +67,7 @@ class Permission(Cog):
                 self.guild_loaded.add(guild.id)
 
     async def after_init(self):
+        self.perm_type = self.bot.crossmodule.get_object('PermType')
         self.perm_permissive = self.bot.crossmodule.get_object('PermissivePerm')
         self.perm_default = self.bot.crossmodule.get_object('DefaultPerm')
 
@@ -74,7 +83,7 @@ class Permission(Cog):
                 self.guild_loaded.add(guild.id)
     
     @command()
-    @require_perm_cog_command('canModifyPermission', 'True')
+    @require_perm_cog_command('canModifyPermission', True)
     async def add_permgroup(self, ctx, groupname: str):
         """
         Usage:
@@ -89,7 +98,7 @@ class Permission(Cog):
             self.perm_role[ctx.guild.id][groupname] = set()
 
     @command()
-    @require_perm_cog_command('canModifyPermission', 'True')
+    @require_perm_cog_command('canModifyPermission', True)
     async def remove_permgroup(self, ctx, groupname: str):
         """
         Usage:
@@ -103,7 +112,7 @@ class Permission(Cog):
         del self.perm_role[ctx.guild.id][groupname]
 
     @command()
-    @require_perm_cog_command('canModifyPermission', 'True')
+    @require_perm_cog_command('canModifyPermission', True)
     async def set_permgroup(self, ctx, groupname: str, permname: str, *, value: str):
         """
         Usage:
@@ -111,10 +120,17 @@ class Permission(Cog):
 
         set permission of a group in current guild
         """
-        self.perm_info[ctx.guild.id][groupname][permname] = value
+        passed_val = literal_eval(value)
+        if permname in self.perm_type:
+            ctx.bot.log.debug('perm type: {}'.format(self.perm_type[permname]))
+        # TODO: user-defined conv
+        if permname not in self.perm_type or check_typing(passed_val, self.perm_type[permname]):
+            self.perm_info[ctx.guild.id][groupname][permname] = passed_val
+        else:
+            await ctx.send('check the value specified')
 
     @command()
-    @require_perm_cog_command('canModifyPermission', 'True')
+    @require_perm_cog_command('canModifyPermission', True)
     async def add_member(self, ctx, groupname: str, member: Member):
         """
         Usage:
@@ -125,7 +141,7 @@ class Permission(Cog):
         self.perm_member[ctx.guild.id][groupname].add(member.id)
 
     @command()
-    @require_perm_cog_command('canModifyPermission', 'True')
+    @require_perm_cog_command('canModifyPermission', True)
     async def remove_member(self, ctx, groupname: str, member: Member):
         """
         Usage:
@@ -136,7 +152,7 @@ class Permission(Cog):
         self.perm_member[ctx.guild.id][groupname].remove(member.id)
 
     @command()
-    @require_perm_cog_command('canModifyPermission', 'True')
+    @require_perm_cog_command('canModifyPermission', True)
     async def add_role(self, ctx, groupname: str, role: Role):
         """
         Usage:
@@ -147,7 +163,7 @@ class Permission(Cog):
         self.perm_role[ctx.guild.id][groupname].add(role.id)
 
     @command()
-    @require_perm_cog_command('canModifyPermission', 'True')
+    @require_perm_cog_command('canModifyPermission', True)
     async def remove_role(self, ctx, groupname: str, role: Role):
         """
         Usage:
@@ -158,7 +174,7 @@ class Permission(Cog):
         self.perm_role[ctx.guild.id][groupname].remove(role.id)
 
     @command()
-    @require_perm_cog_command('canModifyPermission', 'True')
+    @require_perm_cog_command('canModifyPermission', True)
     async def literal_displayperminfo(self, ctx):
         """
         Usage:

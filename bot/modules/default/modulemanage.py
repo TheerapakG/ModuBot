@@ -15,11 +15,12 @@ class ModuleManage(Cog):
         self.config = config
 
     async def init(self):
-        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canManageModule', 'True')
-        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canManageModule', 'False')
+        self.bot.crossmodule.assign_dict_object('PermType', 'canManageModule', bool)
+        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canManageModule', True)
+        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canManageModule', False)
 
     @command()
-    @decorate_cog_command('require_perm_cog_command', 'canManageModule', 'True')
+    @decorate_cog_command('require_perm_cog_command', 'canManageModule', True)
     async def load_modules(self, ctx, *, moduleconfigs: str):
         """
         Usage:
@@ -36,7 +37,7 @@ class ModuleManage(Cog):
         await msg.edit(content = 'loaded successfully!')
 
     @command()
-    @decorate_cog_command('require_perm_cog_command', 'canManageModule', 'True')
+    @decorate_cog_command('require_perm_cog_command', 'canManageModule', True)
     async def unload_modules(self, ctx, *modules):
         """
         Usage:

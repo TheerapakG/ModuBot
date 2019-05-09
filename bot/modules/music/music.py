@@ -12,6 +12,8 @@ from datetime import timedelta
 import time
 import re
 
+from typing import Optional, Union, Set
+
 deps = ['permission']
 
 class Music(Cog):
@@ -26,23 +28,35 @@ class Music(Cog):
         self.downloader = YtdlDownloader(self.bot, 'audio_cache')
 
     async def init(self):
-        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canSummon', 'True')
-        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canDisconnect', 'True')
-        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canControlPlayback', 'True')
-        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canAddEntry', 'True')
-        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canAddStream', 'True')
+        self.bot.crossmodule.assign_dict_object('PermType', 'canSummon', bool)
+        self.bot.crossmodule.assign_dict_object('PermType', 'canDisconnect', bool)
+        self.bot.crossmodule.assign_dict_object('PermType', 'canControlPlayback', bool)
+        self.bot.crossmodule.assign_dict_object('PermType', 'canAddEntry', bool)
+        self.bot.crossmodule.assign_dict_object('PermType', 'canAddStream', bool)
+        self.bot.crossmodule.assign_dict_object('PermType', 'usableYtdlExtractor', Optional[Set[str]])
+        self.bot.crossmodule.assign_dict_object('PermType', 'allowPlaylists', bool)
+        self.bot.crossmodule.assign_dict_object('PermType', 'maxPlaylistsLength', Optional[int])
+        self.bot.crossmodule.assign_dict_object('PermType', 'maxSongCount', Optional[int])
+        self.bot.crossmodule.assign_dict_object('PermType', 'maxEntryLength', Optional[timedelta])
+        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canSummon', True)
+        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canDisconnect', True)
+        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canControlPlayback', True)
+        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canAddEntry', True)
+        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canAddStream', True)
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'usableYtdlExtractor', None)
-        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'allowPlaylists', 'True')
+        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'allowPlaylists', True)
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'maxPlaylistsLength', None)
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'maxSongCount', None)
-        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canSummon', 'False')
-        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canDisconnect', 'False')
-        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canAddEntry', 'False')
-        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canAddStream', 'False')
-        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'usableYtdlExtractor', dict())
-        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'allowPlaylists', 'True')
+        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'maxEntryLength', None)
+        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canSummon', False)
+        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canDisconnect', False)
+        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canAddEntry', False)
+        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canAddStream', False)
+        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'usableYtdlExtractor', {'youtube'})
+        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'allowPlaylists', True)
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'maxPlaylistsLength', 1)
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'maxSongCount', 1)
+        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'maxEntryLength', timedelta(minutes=60))
 
     async def uninit(self):
         self.bot.log.debug('stopping downloader...')
@@ -52,7 +66,7 @@ class Music(Cog):
             await pl.stop()
 
     @command()
-    @decorate_cog_command('require_perm_cog_command', 'canSummon', 'True')
+    @decorate_cog_command('require_perm_cog_command', 'canSummon', True)
     async def summon(self, ctx):
         """
         Usage:
@@ -84,7 +98,7 @@ class Music(Cog):
             await ctx.send('successfully summoned')
 
     @command()
-    @decorate_cog_command('require_perm_cog_command', 'canDisconnect', 'True')
+    @decorate_cog_command('require_perm_cog_command', 'canDisconnect', True)
     async def disconnect(self, ctx):
         """
         Usage:
@@ -97,7 +111,7 @@ class Music(Cog):
         await ctx.send('successfully disconnected')
 
     @command()
-    @decorate_cog_command('require_perm_cog_command', 'canControlPlayback', 'True')
+    @decorate_cog_command('require_perm_cog_command', 'canControlPlayback', True)
     async def resume(self, ctx):
         """
         Usage:
@@ -124,7 +138,7 @@ class Music(Cog):
         await player.play(play_fail_cb = fail, play_success_cb = success, play_wait_cb = wait)
 
     @command()
-    @decorate_cog_command('require_perm_cog_command', 'canControlPlayback', 'True')
+    @decorate_cog_command('require_perm_cog_command', 'canControlPlayback', True)
     async def pause(self, ctx):
         """
         Usage:
@@ -138,7 +152,7 @@ class Music(Cog):
         await ctx.send('successfully paused')
 
     @command()
-    @decorate_cog_command('require_perm_cog_command', 'canControlPlayback', 'True')
+    @decorate_cog_command('require_perm_cog_command', 'canControlPlayback', True)
     async def skip(self, ctx):
         """
         Usage:
@@ -152,7 +166,7 @@ class Music(Cog):
         await ctx.send('successfully skipped')
 
     @command()
-    @decorate_cog_command('require_perm_cog_command', 'canAddEntry', 'True')
+    @decorate_cog_command('require_perm_cog_command', 'canAddEntry', True)
     async def play(self, ctx, *, song_url: str):
         """
         Usage:
@@ -213,7 +227,7 @@ class Music(Cog):
                         'have_perm', 
                         ctx.author, 
                         'allowPlaylists', 
-                        'True',
+                        True,
                     )
 
                     if not allow_playlists_permission:
@@ -333,8 +347,8 @@ class Music(Cog):
         await ctx.send(reply_text)
 
     @command()
-    @decorate_cog_command('require_perm_cog_command', 'canAddEntry', 'True')
-    @decorate_cog_command('require_perm_cog_command', 'canAddStream', 'True')
+    @decorate_cog_command('require_perm_cog_command', 'canAddEntry', True)
+    @decorate_cog_command('require_perm_cog_command', 'canAddStream', True)
     async def stream(self, ctx, song_url):
         """
         Usage:
@@ -370,7 +384,7 @@ class Music(Cog):
                 entry = await get_stream_entry(song_url, ctx.author.id, self.downloader, {'channel':ctx.channel})
                 position = await playlist.add_entry(entry)
 
-            reply_text = "Enqueued `%s` to be played. Position in queue: %s"
+            reply_text = "Enqueued `%s` to be streamed. Position in queue: %s"
             btext = entry.title
 
             # Position msgs
@@ -380,7 +394,7 @@ class Music(Cog):
                 reply_text %= (btext, position)
 
             else:                    
-                reply_text += ' - estimated time until playing: %s'
+                reply_text += ' - estimated time until streaming: %s'
                 reply_text %= (btext, position, ftimedelta(time_until))
 
         await ctx.send(reply_text)
@@ -426,7 +440,6 @@ class Music(Cog):
             else:
                 prog_bar_str += '■'
 
-        # TODO: Streaming action text
         action_text = 'Streaming' if streaming else 'Playing'
 
         if current_entry.queuer_id:
