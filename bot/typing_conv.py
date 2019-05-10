@@ -28,6 +28,10 @@ def check_typing(obj, typehintobj):
             return False
 
 def comparer_typing(typehintobj) -> typing.Callable:
+    '''
+    first: value we had
+    second: value query
+    '''
     try:
         origin = typehintobj.__origin__
     except AttributeError:
@@ -40,5 +44,5 @@ def comparer_typing(typehintobj) -> typing.Callable:
                 return lambda a, b: True if a is None else comparer_typing(typehintobj.__args__[0])(a, b)
         else:
             if issubclass(origin, collections.abc.Set):
-                return lambda a, b: a <= b if isinstance(a, collections.abc.Set) else a in b
+                return lambda a, b: b <= a if isinstance(b, collections.abc.Set) else b in a
             return False

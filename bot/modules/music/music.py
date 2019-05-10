@@ -38,8 +38,8 @@ class Music(Cog):
         self.bot.crossmodule.assign_dict_object('PermType', 'maxPlaylistsLength', Optional[int])
         self.bot.crossmodule.assign_dict_object('PermType', 'maxSongCount', Optional[int])
         self.bot.crossmodule.assign_dict_object('PermType', 'maxEntryLength', Optional[timedelta])
-        self.bot.crossmodule.assign_dict_object('PermComparer', 'maxPlaylistsLength', lambda a, b: a <= b if a else True)
-        self.bot.crossmodule.assign_dict_object('PermComparer', 'maxSongCount', lambda a, b: a <= b if a else True)
+        self.bot.crossmodule.assign_dict_object('PermComparer', 'maxPlaylistsLength', lambda a, b: a >= b if a else True)
+        self.bot.crossmodule.assign_dict_object('PermComparer', 'maxSongCount', lambda a, b: a >= b if a else True)
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canSummon', True)
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canDisconnect', True)
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canControlPlayback', True)
@@ -242,7 +242,7 @@ class Music(Cog):
                     )
 
                     if not max_playlists_length_permission:
-                        await ctx.send("Playlist has too many entries ({1})").format(num_songs)
+                        await ctx.send("Playlist has too many entries ({1})".format(num_songs))
 
                     playlist = await player.get_playlist()
 
@@ -257,7 +257,7 @@ class Music(Cog):
                     )
 
                     if not max_song_count_permission:
-                        await ctx.send("cannot queue because song count will exceed ({1})").format(total_songs)
+                        await ctx.send("cannot queue because song count will exceed ({1})".format(total_songs))
 
                     t0 = time.time()
 
@@ -267,6 +267,7 @@ class Music(Cog):
                     # It would probably be a thread to check a few playlists and get the speed from that
                     # Different playlists might download at different speeds though
                     wait_per_song = 1.2
+                    drop_count = 0
 
                     procmesg = await ctx.send(
                         'Gathering playlist information for {0} songs{1}'.format(
@@ -284,7 +285,16 @@ class Music(Cog):
                     entry = None
                     position = None
                     for entry_proc in entry_list:
-                        # TODO: check perm for length of each entry
+                        duration = entry_proc.get_duration()
+                        max_entry_length_permission =  await ctx.bot.crossmodule.async_call_object(
+                            'have_perm', 
+                            ctx.author, 
+                            'maxEntryLength', 
+                            duration
+                        )
+                        if not max_entry_length_permission:
+                            drop_count += 1
+                            continue
                         position_potent = await playlist.add_entry(entry_proc)
                         if not position:
                             entry = entry_proc
@@ -293,7 +303,6 @@ class Music(Cog):
                     tnow = time.time()
                     ttime = tnow - t0
                     listlen = len(entry_list)
-                    drop_count = 0
 
                     ctx.bot.log.info("Processed {} songs in {} seconds at {:.2f}s/song, {:+.2g}/song from expected ({}s)".format(
                         listlen,
@@ -323,10 +332,18 @@ class Music(Cog):
                     )
 
                     if not max_song_count_permission:
-                        await ctx.send("cannot queue because song count will exceed ({1})").format(total_songs)
+                        await ctx.send("cannot queue because song count will exceed ({1})".format(total_songs))
 
                     entry = await get_entry(song_url, ctx.author.id, self.downloader, {'channel':ctx.channel})
-                    # TODO: check perm for length of each entry
+                    duration = entry.get_duration()
+                    max_entry_length_permission =  await ctx.bot.crossmodule.async_call_object(
+                        'have_perm', 
+                        ctx.author, 
+                        'maxEntryLength', 
+                        duration
+                    )
+                    if not max_entry_length_permission:
+                        await ctx.send("cannot queue because song exceed length ({1})".format(duration))
                     position = await playlist.add_entry(entry)
 
                     reply_text = "Enqueued `%s` to be played. Position in queue: %s"
@@ -376,7 +393,7 @@ class Music(Cog):
                 )
 
                 if not max_song_count_permission:
-                    await ctx.send("cannot queue because song count will exceed ({1})").format(total_songs)
+                    await ctx.send("cannot queue because song count will exceed ({1})".format(total_songs))
 
                 entry = await get_stream_entry(song_url, ctx.author.id, self.downloader, {'channel':ctx.channel})
                 position = await playlist.add_entry(entry)

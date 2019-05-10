@@ -44,6 +44,9 @@ class Entry:
     def get_metadata(self):
         return self._metadata
 
+    def get_duration(self):
+        return timedelta(seconds=self.duration)
+
     async def set_local_url(self, local_url):
         self._local_url = local_url
 

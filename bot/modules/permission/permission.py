@@ -5,6 +5,7 @@ from functools import wraps, partial, update_wrapper
 from ...utils import save_data, load_data
 from ...typing_conv import check_typing, comparer_typing
 from ast import literal_eval
+from inspect import getsource
 
 permtype = {
     'canModifyPermission': bool
@@ -198,6 +199,9 @@ class Permission(Cog):
                 comparer = comparer_typing(self.perm_type[perm])
             except KeyError:
                 raise Exception('cannot deduce comparer when no typing specified')
+
+        self.bot.log.debug('perm {} comparer:'.format(perm))
+        self.bot.log.debug(getsource(comparer))
 
         for group in self.perms[member.guild.id]:
             if perm in self.perm_info[member.guild.id][group]:
