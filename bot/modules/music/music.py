@@ -38,6 +38,8 @@ class Music(Cog):
         self.bot.crossmodule.assign_dict_object('PermType', 'maxPlaylistsLength', Optional[int])
         self.bot.crossmodule.assign_dict_object('PermType', 'maxSongCount', Optional[int])
         self.bot.crossmodule.assign_dict_object('PermType', 'maxEntryLength', Optional[timedelta])
+        self.bot.crossmodule.assign_dict_object('PermComparer', 'maxPlaylistsLength', lambda a, b: a <= b if a else True)
+        self.bot.crossmodule.assign_dict_object('PermComparer', 'maxSongCount', lambda a, b: a <= b if a else True)
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canSummon', True)
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canDisconnect', True)
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canControlPlayback', True)
@@ -208,8 +210,7 @@ class Music(Cog):
             'have_perm', 
             ctx.author, 
             'usableYtdlExtractor', 
-            info.get('extractor', ''),
-            lambda permvalue, requirevalue: requirevalue in permvalue if permvalue is not None else True
+            info.get('extractor', '')
         )
 
         if not extractor_permission:
@@ -237,8 +238,7 @@ class Music(Cog):
                         'have_perm', 
                         ctx.author, 
                         'maxPlaylistsLength', 
-                        num_songs,
-                        lambda permvalue, requirevalue: requirevalue <= permvalue if permvalue else True
+                        num_songs
                     )
 
                     if not max_playlists_length_permission:
@@ -253,8 +253,7 @@ class Music(Cog):
                         'have_perm', 
                         ctx.author, 
                         'maxSongCount', 
-                        total_songs,
-                        lambda permvalue, requirevalue: requirevalue <= permvalue if permvalue else True
+                        total_songs
                     )
 
                     if not max_song_count_permission:
@@ -320,8 +319,7 @@ class Music(Cog):
                         'have_perm', 
                         ctx.author, 
                         'maxSongCount', 
-                        total_songs,
-                        lambda permvalue, requirevalue: requirevalue <= permvalue if permvalue else True
+                        total_songs
                     )
 
                     if not max_song_count_permission:
@@ -374,8 +372,7 @@ class Music(Cog):
                     'have_perm', 
                     ctx.author, 
                     'maxSongCount', 
-                    total_songs,
-                    lambda permvalue, requirevalue: requirevalue <= permvalue if permvalue else True
+                    total_songs
                 )
 
                 if not max_song_count_permission:

@@ -3,7 +3,7 @@ from discord import Member, Role
 from collections import defaultdict
 from functools import wraps, partial, update_wrapper
 from ...utils import save_data, load_data
-from ...typing_conv import check_typing
+from ...typing_conv import check_typing, comparer_typing
 from ast import literal_eval
 
 permtype = {
@@ -21,18 +21,17 @@ default = {
 class Permission(Cog):
 
     class require_perm_cog_command:
-        def __init__(self, perm, value, comparer = lambda permvalue, requirevalue: permvalue == requirevalue, *, coginst = None):
+        def __init__(self, perm, value, *, coginst = None):
             self.coginst = coginst
             self.perm = perm
             self.value = value
-            self.comparer = comparer
 
         def __call__(self, func):
             @wraps(func)
             async def wrapper(funcself, ctx, *args, **kwargs):
                 if not self.coginst:
                     self.coginst = funcself
-                if await self.coginst.have_perm(ctx.author, self.perm, self.value, self.comparer):
+                if await self.coginst.have_perm(ctx.author, self.perm, self.value):
                     return await func(funcself, ctx, *args, **kwargs)
                 else:
                     raise PermError('User do not have the required permission')
@@ -46,6 +45,7 @@ class Permission(Cog):
         self.perm_member = dict()
         self.perm_role = dict()
         self.perm_type = dict()
+        self.perm_comparer = dict()
         self.perm_permissive = dict()
         self.perm_default = dict()
 
@@ -55,6 +55,7 @@ class Permission(Cog):
         bot.crossmodule.register_object('have_perm', self.have_perm)
         bot.crossmodule.register_decorator(update_wrapper(partial(self.require_perm_cog_command, coginst = self), self.require_perm_cog_command))
         bot.crossmodule.register_object('PermType', permtype.copy())
+        bot.crossmodule.register_object('PermComparer', dict())
         bot.crossmodule.register_object('PermissivePerm', permissive.copy())
         bot.crossmodule.register_object('DefaultPerm', default.copy())
 
@@ -68,6 +69,7 @@ class Permission(Cog):
 
     async def after_init(self):
         self.perm_type = self.bot.crossmodule.get_object('PermType')
+        self.perm_comparer = self.bot.crossmodule.get_object('PermComparer')
         self.perm_permissive = self.bot.crossmodule.get_object('PermissivePerm')
         self.perm_default = self.bot.crossmodule.get_object('DefaultPerm')
 
@@ -184,10 +186,18 @@ class Permission(Cog):
         """
         await ctx.send(str(self.perm_info[ctx.guild.id]))
 
-    async def have_perm(self, member, perm, value, comparer = lambda permvalue, requirevalue: permvalue == requirevalue):
+    async def have_perm(self, member, perm, value):
         roles = member.roles
 
         skip_owner_check = False
+
+        if perm in self.perm_comparer:
+            comparer = self.perm_comparer[perm]
+        else:
+            try:
+                comparer = comparer_typing(self.perm_type[perm])
+            except KeyError:
+                raise Exception('cannot deduce comparer when no typing specified')
 
         for group in self.perms[member.guild.id]:
             if perm in self.perm_info[member.guild.id][group]:
