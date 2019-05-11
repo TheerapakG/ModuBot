@@ -2,7 +2,7 @@ import typing
 import collections.abc
 from datetime import timedelta
 
-def check_typing(obj, typehintobj):
+def check_typing(obj: object, typehintobj) -> bool:
     try:
         origin = typehintobj.__origin__
     except AttributeError:
