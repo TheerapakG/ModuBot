@@ -3,7 +3,7 @@ import re
 import os
 import aiohttp
 import discord
-from typing import Optional, Callable, Any
+from typing import Optional, Callable, Any, TypeVar
 from hashlib import md5
 from datetime import timedelta
 
