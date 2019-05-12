@@ -21,6 +21,7 @@ class Music(Cog):
         self._aiolocks = defaultdict(Lock)
         self.bot = None
         self.downloader = None
+        self.lockdowntier = 0
         self._playlists = dict()
 
     async def pre_init(self, bot, config):
@@ -31,6 +32,7 @@ class Music(Cog):
         self.bot.crossmodule.assign_dict_object('PermType', 'canSummon', bool)
         self.bot.crossmodule.assign_dict_object('PermType', 'canDisconnect', bool)
         self.bot.crossmodule.assign_dict_object('PermType', 'canControlPlayback', bool)
+        self.bot.crossmodule.assign_dict_object('PermType', 'canRemoveEntryYourself', bool)
         self.bot.crossmodule.assign_dict_object('PermType', 'canAddEntry', bool)
         self.bot.crossmodule.assign_dict_object('PermType', 'canAddStream', bool)
         self.bot.crossmodule.assign_dict_object('PermType', 'usableYtdlExtractor', Optional[Set[str]])
@@ -38,11 +40,13 @@ class Music(Cog):
         self.bot.crossmodule.assign_dict_object('PermType', 'maxPlaylistsLength', Optional[int])
         self.bot.crossmodule.assign_dict_object('PermType', 'maxSongCount', Optional[int])
         self.bot.crossmodule.assign_dict_object('PermType', 'maxEntryLength', Optional[timedelta])
+        self.bot.crossmodule.assign_dict_object('PermType', 'lockdownTier', Optional[int])
         self.bot.crossmodule.assign_dict_object('PermComparer', 'maxPlaylistsLength', lambda a, b: a >= b if a else True)
         self.bot.crossmodule.assign_dict_object('PermComparer', 'maxSongCount', lambda a, b: a >= b if a else True)
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canSummon', True)
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canDisconnect', True)
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canControlPlayback', True)
+        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canRemoveEntryYourself', True)
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canAddEntry', True)
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'canAddStream', True)
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'usableYtdlExtractor', None)
@@ -50,8 +54,11 @@ class Music(Cog):
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'maxPlaylistsLength', None)
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'maxSongCount', None)
         self.bot.crossmodule.assign_dict_object('PermissivePerm', 'maxEntryLength', None)
+        self.bot.crossmodule.assign_dict_object('PermissivePerm', 'lockdownTier', None)
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canSummon', False)
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canDisconnect', False)
+        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canControlPlayback', False)
+        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canRemoveEntryYourself', True)
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canAddEntry', False)
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'canAddStream', False)
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'usableYtdlExtractor', {'youtube'})
@@ -59,6 +66,7 @@ class Music(Cog):
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'maxPlaylistsLength', 1)
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'maxSongCount', 1)
         self.bot.crossmodule.assign_dict_object('DefaultPerm', 'maxEntryLength', timedelta(minutes=60))
+        self.bot.crossmodule.assign_dict_object('DefaultPerm', 'lockdownTier', 0)
 
     async def uninit(self):
         self.bot.log.debug('stopping downloader...')
@@ -154,7 +162,6 @@ class Music(Cog):
         await ctx.send('successfully paused')
 
     @command()
-    @decorate_cog_command('require_perm_cog_command', 'canControlPlayback', True)
     async def skip(self, ctx):
         """
         Usage:
@@ -162,10 +169,58 @@ class Music(Cog):
 
         skip playback
         """
+        ctrlplayback_permission =  await ctx.bot.crossmodule.async_call_object(
+            'have_perm', 
+            ctx.author, 
+            'canControlPlayback', 
+            True
+        )
+        authorremove_permission =  await ctx.bot.crossmodule.async_call_object(
+            'have_perm', 
+            ctx.author, 
+            'canRemoveEntryYourself', 
+            True
+        )
+
         guild = get_guild(ctx.bot, ctx.guild)
         player = await guild.get_player()
-        await player.skip()
-        await ctx.send('successfully skipped')
+        current = await player.get_current_entry()
+
+        if ctrlplayback_permission or (authorremove_permission and current.queuer_id == ctx.author.id):
+            await player.skip()
+            await ctx.send('successfully skipped')
+
+    @command()
+    async def remove(self, ctx, position: Optional[int] = None):
+        """
+        Usage:
+            {prefix}remove [# in queue]
+
+        remove entry from queue
+        """
+        ctrlplayback_permission =  await ctx.bot.crossmodule.async_call_object(
+            'have_perm', 
+            ctx.author, 
+            'canControlPlayback', 
+            True
+        )
+        authorremove_permission =  await ctx.bot.crossmodule.async_call_object(
+            'have_perm', 
+            ctx.author, 
+            'canRemoveEntryYourself', 
+            True
+        )
+
+        guild = get_guild(ctx.bot, ctx.guild)
+        player = await guild.get_player()
+        playlist = await player.get_playlist()
+        if not position:
+            position = (await playlist.get_length()) - 1
+        entry = await playlist[position]
+
+        if ctrlplayback_permission or (authorremove_permission and entry.queuer_id == ctx.author.id):
+            await playlist.remove_position(position)
+            await ctx.send('successfully removed')
 
     @command()
     @decorate_cog_command('require_perm_cog_command', 'canAddEntry', True)
@@ -177,6 +232,18 @@ class Music(Cog):
 
         Adds the song to the current playlist.
         """
+
+        bypass_lockdown_permission =  await ctx.bot.crossmodule.async_call_object(
+            'have_perm', 
+            ctx.author, 
+            'lockdownTier', 
+            self.lockdowntier,
+        )
+
+        if not bypass_lockdown_permission:
+            await ctx.send("You do not have permission to interact with the bot due to lockdown.")
+            return
+
         guild = get_guild(ctx.bot, ctx.guild)
         player = await guild.get_player()
 
@@ -374,6 +441,18 @@ class Music(Cog):
         media without predownloading it.  Note: FFmpeg is notoriously bad at handling
         streams, especially on poor connections.  You have been warned.
         """
+
+        bypass_lockdown_permission =  await ctx.bot.crossmodule.async_call_object(
+            'have_perm', 
+            ctx.author, 
+            'lockdownTier', 
+            self.lockdowntier,
+        )
+
+        if not bypass_lockdown_permission:
+            await ctx.send("You do not have permission to interact with the bot due to lockdown.")
+            return
+
         guild = get_guild(ctx.bot, ctx.guild)
         player = await guild.get_player()
 
@@ -412,6 +491,35 @@ class Music(Cog):
                 reply_text %= (btext, position, ftimedelta(time_until))
 
         await ctx.send(reply_text)
+
+    @command
+    @decorate_cog_command('require_perm_cog_command', 'canLockdown', True)
+    async def lockdown(self, ctx, tier: Optional[str] = None):
+        """
+        Usage:
+            {command_prefix}lockdown
+
+        Limit users who can add entries temporarily based on tier settable via permission.
+        """
+        if tier:
+            tier = int(tier)
+            if tier == 0:
+                self.lockdowntier = 0
+                reply = 'successfully remove lockdown limit'
+            elif tier < 0:
+                reply = 'invalid lockdown limit!'
+            else:
+                self.lockdowntier = tier
+                reply = 'successfully set lockdown limit to tier {}'.format(self.lockdowntier)
+        else:
+            if self.lockdowntier:
+                self.lockdowntier = 0
+                reply = 'successfully remove lockdown limit'
+            else:
+                self.lockdowntier = 1
+                reply = 'successfully set lockdown limit to tier 1'
+                
+        await ctx.send(reply)
 
     @command()
     async def np(self, ctx):
@@ -477,5 +585,55 @@ class Music(Cog):
 
         await ctx.send(np_text)
 
+    @command()
+    async def volume(self, ctx, new_volume:Optional[str] = None):
+        """
+        Usage:
+            {command_prefix}volume (+/-)[volume]
+        Sets the playback volume. Accepted values are from 1 to 100.
+        Putting + or - before the volume will make the volume change relative to the current volume.
+        """
+
+        guild = get_guild(ctx.bot, ctx.guild)
+        player = await guild.get_player()
+
+        if not new_volume:
+            await ctx.send(('Current volume: `%s%%`') % int(player.volume * 100))
+            return
+
+        relative = False
+        if new_volume[0] in '+-':
+            relative = True
+
+        try:
+            new_volume = int(new_volume)
+
+        except ValueError:
+            raise Exception(('`{0}` is not a valid number').format(new_volume))
+
+        vol_change = None
+        if relative:
+            vol_change = new_volume
+            new_volume += (player.volume * 100)
+
+        old_volume = int(player.volume * 100)
+
+        if 0 < new_volume <= 100:
+            player.volume = new_volume / 100.0
+
+            await ctx.send(('Updated volume from **%d** to **%d**') % (old_volume, new_volume))
+            return
+
+        else:
+            if relative:
+                raise Exception(
+                    'Unreasonable volume change provided: {}{:+} -> {}%.  Provide a change between {} and {:+}.'.format(
+                        old_volume, vol_change, old_volume + vol_change, 1 - old_volume, 100 - old_volume
+                    )
+                )
+            else:
+                raise Exception(
+                    'Unreasonable volume provided: {}%. Provide a value between 1 and 100.'.format(new_volume)
+                )
 
 cogs = [Music]

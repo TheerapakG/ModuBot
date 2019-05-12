@@ -104,6 +104,10 @@ class Playlist:
                 self._cache_task.insert(position, create_task(self._list[position].prepare_cache()))
             return position + 1
 
+    async def get_length(self):
+        async with self._aiolocks['list']:
+            return len(self._list)
+
     async def remove_position(self, position):
         async with self._aiolocks['list']:
             del self._list[position]
@@ -132,7 +136,7 @@ class Playlist:
                     estimated_time += e.duration
                 else:
                     break
-        return timedelta(seconds=estimated_time)
+        return timedelta(seconds=estimated_time)            
 
     async def num_entry_of(self, user_id):
         async with self._aiolocks['list']:
@@ -169,10 +173,23 @@ class Player:
         self._play_task = None
         self._play_safe_task = None
         self._source = None
-        self.volume = volume
+        self._volume = volume
         self.state = PlayerState.PAUSE
 
         create_task(self.play())
+
+    @property
+    def volume(self):
+        return self._volume
+
+    @volume.setter
+    def volume(self, val):
+        self._volume = val
+        async def set_if_source():
+            async with self._aiolocks['player']:
+                if self._source:
+                    self._source._source.volume = val
+        create_task(set_if_source())
 
     async def status(self):
         async with self._aiolocks['player']:
@@ -252,7 +269,7 @@ class Player:
                             options=aoptions,
                             stderr=subprocess.PIPE
                         ),
-                        self.volume
+                        self._volume
                     )
                 )
 
