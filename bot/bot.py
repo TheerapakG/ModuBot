@@ -1,29 +1,29 @@
-from discord.ext.commands import Bot
 import asyncio
 import logging
-import colorlog
-from importlib import import_module, reload
-from collections import namedtuple
-from inspect import iscoroutinefunction, isfunction
-from functools import partial, wraps
-from contextlib import suppress
 import pkgutil
 import sys
+import threading
+import traceback
+from collections import defaultdict, deque, namedtuple
+from contextlib import suppress
+from functools import partial, wraps
+from importlib import import_module, reload
+from inspect import iscoroutinefunction, isfunction
+
+import colorlog
+from discord.ext.commands import Bot
 from websockets import ConnectionClosed
 
 from . import config
-from .utils import isiterable
-from .rich_guild import guilds, register_bot
 from .crossmodule import CrossModule
-from collections import namedtuple, deque, defaultdict
-import threading
-import traceback
+from .rich_guild import guilds, register_bot
+from .utils import isiterable
 
 MODUBOT_MAJOR = '0'
 MODUBOT_MINOR = '1'
 MODUBOT_REVISION = '3'
 MODUBOT_VERSIONTYPE = 'a'
-MODUBOT_SUBVERSION = '1'
+MODUBOT_SUBVERSION = '2'
 MODUBOT_VERSION = '{}.{}.{}-{}{}'.format(MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
 MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
@@ -32,6 +32,7 @@ class ModuBot(Bot):
     ModuleTuple = namedtuple('ModuleTuple', ['name', 'module', 'module_spfc_config'])
 
     def __init__(self, *args, logname = "ModuBot", conf = config.ConfigDefaults, loghandlerlist = [], **kwargs):
+        self._aiolocks = defaultdict(asyncio.Lock)
         self.bot_version = (MODUBOT_MAJOR, MODUBOT_MINOR, MODUBOT_REVISION, MODUBOT_VERSIONTYPE, MODUBOT_SUBVERSION)
         self.bot_str = MODUBOT_STR
         self.thread = None
@@ -51,6 +52,8 @@ class ModuBot(Bot):
             self._owner_id = int(self.config.owner_id)
         elif self.config.owner_id:
             self._owner_id = self.config.owner_id
+
+        self._presence = (None, None)
 
     async def _load_modules(self, modulelist):
         # TODO: change into cog pre_init, cog init and cog post_init/ deps listing inside cogs
@@ -425,3 +428,12 @@ class ModuBot(Bot):
 
     def online(self):
         return self._init
+
+    async def get_presence(self):
+        async with self._aiolocks['presence']:
+            return self._presence
+
+    async def set_presence(self, *, activity = None, status=None):
+        async with self._aiolocks['presence']:
+            await self.change_presence(activity = activity, status = status)
+            self._presence = (activity, status)

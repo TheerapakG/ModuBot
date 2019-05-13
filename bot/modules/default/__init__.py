@@ -1,5 +1,8 @@
-cogs = []
-deps = []
+cogs = set()
+deps = set()
 from . import modulemanage
-cogs.extend(modulemanage.cogs)
-deps.extend(modulemanage.deps)
+from . import appearance
+cogs.update(modulemanage.cogs)
+deps.update(modulemanage.deps)
+cogs.update(appearance.cogs)
+deps.update(appearance.deps)
