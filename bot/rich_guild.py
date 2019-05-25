@@ -2,6 +2,7 @@ from discord import Guild
 from asyncio import Lock
 from collections import defaultdict
 from .playback import Player
+from typing import List
 
 guilds = dict()
 
@@ -87,6 +88,9 @@ class RichGuild:
 
 def get_guild(bot, guild) -> RichGuild:
     return guilds[bot.user.id][guild.id]
+
+def get_guild_list(bot) -> List[RichGuild]:
+    return guilds[bot.user.id].copy()
 
 def register_bot(bot):
     guilds[bot.user.id] = {guild.id:RichGuild(bot, guild.id) for guild in bot.guilds}

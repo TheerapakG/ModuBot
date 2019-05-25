@@ -9,6 +9,7 @@ from itertools import islice
 from datetime import timedelta
 import traceback
 import subprocess
+from random import shuffle
 
 class Entry:
     def __init__(self, source_url, title, duration, queuer_id, metadata):
@@ -19,6 +20,7 @@ class Entry:
         self._aiolocks = defaultdict(Lock)
         self._preparing_cache = False
         self._cached = False
+        self._cache_task = None # playlists set this
         self._metadata = metadata
         self._local_url = None
 
@@ -56,7 +58,6 @@ class Playlist:
         self._name = name
         self._aiolocks = defaultdict(Lock)
         self._list = deque()
-        self._cache_task = deque()
         self._precache = precache
 
     async def __getitem__(self, item: Union[int, slice]):
@@ -68,12 +69,23 @@ class Playlist:
 
     async def stop(self):
         async with self._aiolocks['list']:
-            for cache in self._cache_task:
-                cache.cancel()
-                try:
-                    await cache
-                except:
-                    pass
+            for entry in self._list:
+                if entry._cache_task:
+                    entry._cache_task.cancel()
+                    try:
+                        await entry._cache_task
+                    except:
+                        pass
+                    entry._cache_task = None
+                    entry._preparing_cache = False
+                    entry._cached = False
+
+    async def shuffle(self):
+        async with self._aiolocks['list']:
+            shuffle(self._list)
+            for entry in self._list[:self._precache]:
+                if not entry._cache_task:
+                    entry._cache_task = create_task(entry.prepare_cache())
 
     def get_name(self):
         return self._name
@@ -84,13 +96,10 @@ class Playlist:
                 return
 
             entry = self._list.popleft()
-            cache = self._cache_task.popleft()
-            if self._precache <= len(self._list):
-                self._cache_task.append(
-                    create_task(self._list[self._precache - 1].prepare_cache())
-                    )
+            if not entry._cache_task:
+                entry._cache_task = create_task(entry.prepare_cache())
 
-        return (entry, cache)
+        return (entry, entry._cache_task)
 
     async def add_entry(self, entry, *, head = False):
         async with self._aiolocks['list']:
@@ -101,7 +110,7 @@ class Playlist:
                 self._list.append(entry)
                 position = len(self._list) - 1
             if self._precache > position:
-                self._cache_task.insert(position, create_task(self._list[position].prepare_cache()))
+                entry._cache_task = create_task(entry.prepare_cache())
             return position + 1
 
     async def get_length(self):
@@ -110,14 +119,16 @@ class Playlist:
 
     async def remove_position(self, position):
         async with self._aiolocks['list']:
-            del self._list[position]
             if position < self._precache:
-                self._cache_task[position].cancel()
-                del self._cache_task[position]
+                self._list[position]._cache_task.cancel()
+                self._list[position]._cache_task = None
                 if self._precache <= len(self._list):
-                    self._cache_task.append(
-                        create_task(self._list[self._precache - 1].prepare_cache())
-                        )
+                    consider = self._list[self._precache - 1]
+                    if not consider.cache_task:
+                        consider.cache_task = create_task(consider.prepare_cache())
+            val = self._list[position]
+            del self._list[position]
+            return val
 
     async def get_entry_position(self, entry):
         async with self._aiolocks['list']:

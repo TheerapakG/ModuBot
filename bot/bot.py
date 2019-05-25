@@ -42,7 +42,7 @@ from websockets import ConnectionClosed
 
 from . import config
 from .crossmodule import CrossModule
-from .rich_guild import guilds, register_bot
+from .rich_guild import guilds, register_bot, get_guild_list
 from .utils import isiterable
 
 MODUBOT_MAJOR = '0'
@@ -55,7 +55,7 @@ MODUBOT_STR = 'ModuBot {}'.format(MODUBOT_VERSION)
 
 class ModuBot(Bot):
 
-    ModuleTuple = namedtuple('ModuleTuple', ['name', 'module', 'module_spfc_config'])
+    ModuleTuple = namedtuple('ModuleTuple', ['name', 'module'])
 
     def __init__(self, *args, logname = "ModuBot", conf = config.ConfigDefaults, loghandlerlist = [], **kwargs):
         self._aiolocks = defaultdict(asyncio.Lock)
@@ -168,9 +168,9 @@ class ModuBot(Bot):
                             self.log.debug(str(potential.__func__))
                             try:
                                 if iscoroutinefunction(potential.__func__):
-                                    await potential(self, moduleinfo.module_spfc_config)
+                                    await potential(self)
                                 elif isfunction(potential.__func__):
-                                    potential(self, moduleinfo.module_spfc_config)
+                                    potential(self)
                                 else:
                                     self.log.debug('pre_init is neither funtion nor coroutine function')
                             except Exception:
@@ -271,17 +271,17 @@ class ModuBot(Bot):
 
         return module
 
-    async def _gen_modulelist(self, modulesname_config):
+    async def _gen_modulelist(self, modulesname):
         modules = list()
-        for modulename, moduleconfig in modulesname_config:
+        for modulename in modulesname:
             module = await self._prepare_load_module(modulename)
             if module:
-                modules.append(self.ModuleTuple(modulename, module, moduleconfig))
+                modules.append(self.ModuleTuple(modulename, module))
 
         return modules
 
-    async def load_modules(self, modulesname_config):
-        modulelist = await self._gen_modulelist(modulesname_config)
+    async def load_modules(self, modulesname):
+        modulelist = await self._gen_modulelist(modulesname)
         await self._load_modules(modulelist)
 
     async def unload_modules(self, modulenames, *, unimport = False):
@@ -388,8 +388,14 @@ class ModuBot(Bot):
         self.loop.run_forever()
 
     async def _logout(self):
-        await super().logout()
+        guilds = get_guild_list(self)
+        for guild in guilds:
+            try:
+                await guild.set_connected_voice_channel(None)
+            except:
+                pass
         await self.unload_all_module()
+        await super().logout()
         self.log.debug('finished cleaning up')
 
     def logout_loopstopped(self):
@@ -400,7 +406,7 @@ class ModuBot(Bot):
         gathered = asyncio.gather(*asyncio.Task.all_tasks(self.loop), loop=self.loop)
         gathered.cancel()
         async def await_gathered():
-            with suppress(asyncio.CancelledError):
+            with suppress(Exception):
                 await gathered
         self.loop.run_until_complete(await_gathered())
         self.log.info('closing loop...')
@@ -424,7 +430,7 @@ class ModuBot(Bot):
         gathered = asyncio.gather(*asyncio.Task.all_tasks(self.loop), loop=self.loop)
         gathered.cancel()
         async def await_gathered():
-            with suppress(asyncio.CancelledError, ConnectionClosed):
+            with suppress(Exception):
                 await gathered
         self.loop.run_until_complete(await_gathered())
         self.log.info('closing loop...')
@@ -437,6 +443,9 @@ class ModuBot(Bot):
             self.logout_looprunning()
         else:
             self.logout_loopstopped()
+        self._init = False
+        if getattr(self, '_restart', None):
+            raise Exception('if_receive_restart')
 
     class check_online:
         def __call__(self, func):
