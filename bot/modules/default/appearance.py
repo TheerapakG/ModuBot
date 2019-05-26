@@ -7,11 +7,9 @@ deps = ['permission']
 class Appearance(Cog):
     def __init__(self):
         self.bot = None
-        self.config = None
 
-    async def pre_init(self, bot, config):
+    async def pre_init(self, bot):
         self.bot = bot
-        self.config = config
 
     async def init(self):
         self.bot.crossmodule.assign_dict_object('PermType', 'canManageAppearance', bool)

@@ -24,7 +24,7 @@ class Music(Cog):
         self.lockdowntier = 0
         self._playlists = dict()
 
-    async def pre_init(self, bot, config):
+    async def pre_init(self, bot):
         self.bot = bot
         self.downloader = YtdlDownloader(self.bot, 'audio_cache')
 

@@ -50,9 +50,8 @@ class Permission(Cog):
         self.perm_permissive = dict()
         self.perm_default = dict()
 
-    async def pre_init(self, bot, config):
+    async def pre_init(self, bot):
         self.bot = bot
-        self.perm_info = config
         bot.crossmodule.register_object('have_perm', self.have_perm)
         bot.crossmodule.register_decorator(update_wrapper(partial(self.require_perm_cog_command, coginst = self), self.require_perm_cog_command))
         bot.crossmodule.register_object('PermType', permtype.copy())
